@@ -27,29 +27,50 @@ type BSdkV3Client struct {
 	appKey      string
 	ctx         context.Context    // 内部创建的 context
 	ctxCancel   context.CancelFunc // 用于取消 context
+	config      *config.Config     // 客户端配置
 }
 
-// NewBSdkV3Client 创建一个新的 BSdkV3Client 实例
-// 内部自动创建 context，使调用方无需显式传递 context
-func NewBSdkV3Client(appKey string) (*BSdkV3Client, error) {
+// ClientOption 定义客户端选项
+type ClientOption func(*BSdkV3Client)
+
+// WithConfig 设置客户端配置
+func WithConfig(cfg *config.Config) ClientOption {
+	return func(c *BSdkV3Client) {
+		c.config = cfg
+	}
+}
+
+// NewBSdkV3Client 创建一个新的 BSdkV3Client 实例。
+// 内部自动创建 context，调用方无需显式传递 context
+func NewBSdkV3Client(appKey string, options ...ClientOption) (*BSdkV3Client, error) {
 	// 创建一个带有取消功能的 context
 	ctx, cancel := context.WithCancel(context.Background())
 
+	// 使用默认配置创建客户端
 	client := &BSdkV3Client{
-		client: resty.New().
-			// 设置默认Content-Type为form-urlencoded
-			SetHeader("Content-Type", "application/x-www-form-urlencoded").
-			SetHeader("User-Agent", "Mozilla/5.0 BSGameSDK").
-			SetHeader("cversion", "1").
-			// debug
-			SetProxy("http://127.0.0.1:8080").
-			// 设置默认超时等
-			SetTimeout(config.GetRequestTimeout()),
 		formEncoder: form.NewEncoder(),
 		appKey:      appKey,
 		ctx:         ctx,
 		ctxCancel:   cancel,
+		config:      config.NewDefaultConfig(), // 默认配置
 	}
+
+	// 应用选项
+	for _, option := range options {
+		option(client)
+	}
+
+	// 创建并配置 HTTP 客户端
+	client.client = resty.New().
+		// 设置默认Content-Type为form-urlencoded
+		SetHeader("Content-Type", "application/x-www-form-urlencoded").
+		SetHeader("User-Agent", "Mozilla/5.0 BSGameSDK").
+		SetHeader("cversion", "1").
+		// debug
+		SetProxy("http://127.0.0.1:8080").
+		// 设置默认超时等
+		SetTimeout(client.config.RequestTimeout)
+
 	err := client.getConfig()
 	if err != nil {
 		return nil, fmt.Errorf("配置失败: %w", err)
@@ -57,8 +78,13 @@ func NewBSdkV3Client(appKey string) (*BSdkV3Client, error) {
 	return client, nil
 }
 
+// GetConfig 返回客户端配置
+func (c *BSdkV3Client) GetConfig() *config.Config {
+	return c.config
+}
+
 func (c *BSdkV3Client) getConfig() error {
-	confReq := NewBSdkV3ExtConfReq()
+	confReq := NewBSdkV3ExtConfReq(c.config)
 	var confResp BSdkV3ExtConfResp
 	_, err := c.execReq(c.ctx, confReq, &confResp)
 	if err != nil {
@@ -72,7 +98,7 @@ func (c *BSdkV3Client) getConfig() error {
 	log.Debug(confResp.ConfigLoginHttps)
 	config.GetHostConfig().UpdateHosts(config.ParseHostsStr(config.HostTypeLoginHttps, confResp.ConfigLoginHttps))
 
-	cipherReq := NewBSdkGetCipherV3Req()
+	cipherReq := NewBSdkGetCipherV3Req(c.config)
 	var cipherResp BSdkGetCipherV3Resp
 	_, err = c.execReq(c.ctx, cipherReq, &cipherResp)
 	if err != nil {
@@ -201,7 +227,7 @@ func (c *BSdkV3Client) Login(u UserInfo) (*string, error) {
 	}
 
 	// 构造登录请求
-	loginReq := NewBSdkV3LoginReq(user)
+	loginReq := NewBSdkV3LoginReq(c.config, user)
 
 	// 发起第一次登录请求
 	var loginResp BSdkV3LoginResp
@@ -220,7 +246,7 @@ func (c *BSdkV3Client) Login(u UserInfo) (*string, error) {
 		}
 
 		// 构造带验证码的登录请求
-		captLoginReq := NewBSdkV3CaptLoginReq(user, *captchaParams)
+		captLoginReq := NewBSdkV3CaptLoginReq(c.config, user, *captchaParams)
 
 		// 发起带验证码的登录请求
 		var captLoginResp BSdkV3CaptLoginResp
@@ -253,7 +279,7 @@ func (c *BSdkV3Client) Login(u UserInfo) (*string, error) {
 
 func (c *BSdkV3Client) handleCaptcha(ctx context.Context) (*CaptchaParams, error) {
 	// 请求验证码参数
-	captchaReq := NewBSdkStartCaptchaReq()
+	captchaReq := NewBSdkStartCaptchaReq(c.config)
 
 	// 准备请求，处理签名和表单数据
 	req, err := c.prepareRequest(ctx, captchaReq)
@@ -302,7 +328,7 @@ func (c *BSdkV3Client) handleCaptcha(ctx context.Context) (*CaptchaParams, error
 // startCaptcha 方法获取验证码信息
 func (c *BSdkV3Client) startCaptcha(ctx context.Context) (*BSdkStartCaptchaResp, error) {
 	// 构造请求体
-	captchaReq := NewBSdkStartCaptchaReq()
+	captchaReq := NewBSdkStartCaptchaReq(c.config)
 
 	var result BSdkStartCaptchaResp
 	// 发起 POST 请求

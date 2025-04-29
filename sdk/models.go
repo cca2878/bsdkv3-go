@@ -9,6 +9,18 @@ import (
 	"bsdkv3/sdk/config"
 )
 
+// ClientRequest 添加关联客户端的请求接口
+type ClientRequest interface {
+	Request
+	SetClient(client *BSdkV3Client)
+}
+
+// ConfigRequest 添加关联配置的请求接口
+type ConfigRequest interface {
+	Request
+	SetConfig(config *config.Config)
+}
+
 //	type User interface {
 //		GetUserInfo() UserInfo
 //	}
@@ -29,6 +41,9 @@ const (
 
 // BaseRequest 基础请求公共字段
 type BaseRequest struct {
+	// 关联的配置
+	config *config.Config
+
 	CurBuvid          string `form:"cur_buvid"`
 	OldBuvid          string `form:"old_buvid"`
 	UdId              string `form:"udid"`
@@ -54,6 +69,11 @@ type BaseRequest struct {
 	Domain            string `form:"domain"`
 }
 
+// SetConfig 设置关联的配置
+func (b *BaseRequest) SetConfig(config *config.Config) {
+	b.config = config
+}
+
 // setDomainFromUrl 从 URL 更新 Domain 和 OriginalDomain 字段
 func (b *BaseRequest) setDomainFromUrl(u *url.URL) {
 	if u != nil {
@@ -62,35 +82,41 @@ func (b *BaseRequest) setDomainFromUrl(u *url.URL) {
 	}
 }
 
-// NewBaseRequest 创建基础请求对象（带默认值）
-func NewBaseRequest() BaseRequest {
-	// 从配置中获取默认值
-	defaultReqConf := config.GetDefaultRequestConfig()
+// NewBaseRequest 创建基础请求对象
+func NewBaseRequest(conf *config.Config) BaseRequest {
+	// 确定使用哪个配置
+	var reqConf config.RequestConfig
+	if conf != nil {
+		reqConf = conf.RequestConfig
+	} else {
+		reqConf = config.NewDefaultConfig().RequestConfig
+	}
 
 	return BaseRequest{
-		CurBuvid:          defaultReqConf.CurBuvid,
-		OldBuvid:          defaultReqConf.OldBuvid,
-		UdId:              defaultReqConf.UdId,
-		BdId:              defaultReqConf.BdId,
-		SdkType:           defaultReqConf.SdkType,
-		VersionCode:       defaultReqConf.VersionCode,
-		MerchantId:        defaultReqConf.MerchantId,
-		ServerId:          defaultReqConf.ServerId,
-		Version:           defaultReqConf.Version,
-		DomainSwitchCount: defaultReqConf.DomainSwitchCount,
-		ApkSign:           defaultReqConf.ApkSign,
-		PlatformType:      defaultReqConf.PlatformType,
-		AppVer:            defaultReqConf.AppVer,
-		SdkLogType:        defaultReqConf.SdkLogType,
-		CurrentEnv:        defaultReqConf.CurrentEnv,
-		SdkVer:            defaultReqConf.SdkVer,
-		AppId:             defaultReqConf.AppId,
-		Platform:          defaultReqConf.Platform,
-		ChannelId:         defaultReqConf.ChannelId,
-		GameId:            defaultReqConf.GameId,
+		CurBuvid:          reqConf.CurBuvid,
+		OldBuvid:          reqConf.OldBuvid,
+		UdId:              reqConf.UdId,
+		BdId:              reqConf.BdId,
+		SdkType:           reqConf.SdkType,
+		VersionCode:       reqConf.VersionCode,
+		MerchantId:        reqConf.MerchantId,
+		ServerId:          reqConf.ServerId,
+		Version:           reqConf.Version,
+		DomainSwitchCount: reqConf.DomainSwitchCount,
+		ApkSign:           reqConf.ApkSign,
+		PlatformType:      reqConf.PlatformType,
+		AppVer:            reqConf.AppVer,
+		SdkLogType:        reqConf.SdkLogType,
+		CurrentEnv:        reqConf.CurrentEnv,
+		SdkVer:            reqConf.SdkVer,
+		AppId:             reqConf.AppId,
+		Platform:          reqConf.Platform,
+		ChannelId:         reqConf.ChannelId,
+		GameId:            reqConf.GameId,
 		Timestamp:         strconv.FormatInt(time.Now().UnixMilli(), 10),
-		Domain:            defaultReqConf.Domain,
-		OriginalDomain:    defaultReqConf.OriginalDomain,
+		Domain:            reqConf.Domain,
+		OriginalDomain:    reqConf.OriginalDomain,
+		config:            conf,
 	}
 }
 
@@ -132,9 +158,11 @@ type BSdkV3ExtConfResp struct {
 	ConfigAndroidHttps string `json:"config_login_android_https"`
 }
 
-func NewBSdkV3ExtConfReq() BSdkV3ExtConfReq {
+// 以下是修改 BSdkV3ExtConfReq 的例子，其他请求类似修改
+
+func NewBSdkV3ExtConfReq(conf *config.Config) BSdkV3ExtConfReq {
 	req := BSdkV3ExtConfReq{
-		BaseRequest: NewBaseRequest(),
+		BaseRequest: NewBaseRequest(conf),
 	}
 	if reqUrl, err := req.GetUrl(); err == nil {
 		req.setDomainFromUrl(reqUrl)
@@ -165,9 +193,9 @@ type BSdkGetCipherV3Req struct {
 }
 
 // NewBSdkGetCipherV3Req 创建获取密钥请求实例
-func NewBSdkGetCipherV3Req() BSdkGetCipherV3Req {
+func NewBSdkGetCipherV3Req(conf *config.Config) BSdkGetCipherV3Req {
 	req := BSdkGetCipherV3Req{
-		BaseRequest: NewBaseRequest(),
+		BaseRequest: NewBaseRequest(conf),
 		CipherType:  cipherType,
 	}
 	if reqUrl, err := req.GetUrl(); err == nil {
@@ -206,10 +234,10 @@ type BSdkV3LoginReq struct {
 }
 
 // NewBSdkV3LoginReq Factory Func
-func NewBSdkV3LoginReq(user UserInfo) BSdkV3LoginReq {
+func NewBSdkV3LoginReq(conf *config.Config, user UserInfo) BSdkV3LoginReq {
 	//userInfo := user.GetUserInfo()
 	req := BSdkV3LoginReq{
-		BaseRequest: NewBaseRequest(),
+		BaseRequest: NewBaseRequest(conf),
 		BdInfo:      BdInfo,
 		UserId:      user.Username,
 		Pwd:         user.Password,
@@ -266,9 +294,9 @@ type BSdkV3CaptLoginReq struct {
 }
 
 // NewBSdkV3CaptLoginReq Factory Func
-func NewBSdkV3CaptLoginReq(user UserInfo, captParams CaptchaParams) BSdkV3CaptLoginReq {
+func NewBSdkV3CaptLoginReq(conf *config.Config, user UserInfo, captParams CaptchaParams) BSdkV3CaptLoginReq {
 	req := BSdkV3CaptLoginReq{
-		BSdkV3LoginReq: NewBSdkV3LoginReq(user),
+		BSdkV3LoginReq: NewBSdkV3LoginReq(conf, user),
 		CaptchaParams:  NewCaptchaParams(captParams),
 	}
 	if reqUrl, err := req.GetUrl(); err == nil {
@@ -303,9 +331,9 @@ type BSdkStartCaptchaReq struct {
 }
 
 // NewBSdkStartCaptchaReq 创建验证码请求实例
-func NewBSdkStartCaptchaReq() BSdkStartCaptchaReq {
+func NewBSdkStartCaptchaReq(conf *config.Config) BSdkStartCaptchaReq {
 	req := BSdkStartCaptchaReq{
-		BaseRequest: NewBaseRequest(),
+		BaseRequest: NewBaseRequest(conf),
 		Version:     config.DefaultCaptchaVersion,
 	}
 	if reqUrl, err := req.GetUrl(); err == nil {

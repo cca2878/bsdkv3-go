@@ -24,7 +24,7 @@ func testValidator() {
 }
 
 func testLogin() {
-	//log.SetLevel(log.LevelDebug)
+	log.SetLevel(log.LevelDebug)
 	user := sdk.UserInfo{
 		Username: "your_username",
 		Password: "your_password",
