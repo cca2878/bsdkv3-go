@@ -1,3 +1,44 @@
+// Package sdk provides a Go client for authentication and validation services.
+//
+// This package offers a clean, idiomatic Go interface for handling authentication
+// workflows, including automatic captcha validation and secure credential handling.
+//
+// # Quick Start
+//
+// Create a client and authenticate:
+//
+//	client, err := sdk.NewBSdkV3Client(config.AppkeyPcr)
+//	if err != nil {
+//		log.Fatal(err)
+//	}
+//	defer client.Close()
+//
+//	user := sdk.UserInfo{
+//		Username: "your_username",
+//		Password: "your_password",
+//	}
+//
+//	accessKey, err := client.Login(user)
+//	if err != nil {
+//		log.Fatal(err)
+//	}
+//
+// # Configuration
+//
+// The client supports flexible configuration via the config package:
+//
+//	cfg := config.NewConfig(
+//		config.WithRequestTimeout(10 * time.Second),
+//		config.WithAppId("custom_app_id"),
+//	)
+//	client, err := sdk.NewBSdkV3Client(appKey, sdk.WithConfig(cfg))
+//
+// # Context and Cancellation
+//
+// The client automatically manages contexts internally. To cancel all pending
+// operations, call Close() on the client:
+//
+//	client.Close() // Cancels all pending requests
 package sdk
 
 import (
@@ -13,11 +54,28 @@ import (
 	"sort"
 	"strings"
 
-	"bsdkv3/sdk/config"
-	"bsdkv3/sdk/log"
+	"github.com/cca2878/bsdkv3-go/sdk/config"
+	"github.com/cca2878/bsdkv3-go/sdk/log"
 )
 
-// BSdkV3Client 封装 HTTP 客户端和 API 调用
+// BSdkV3Client 封装 HTTP 客户端和 API 调用。
+//
+// 客户端提供了认证和验证服务的完整功能，包括：
+// - 自动获取和管理配置
+// - 密码加密和签名计算
+// - 验证码处理
+// - 请求签名和发送
+//
+// 使用示例：
+//
+//	client, err := NewBSdkV3Client("your_app_key")
+//	if err != nil {
+//		log.Fatal(err)
+//	}
+//	defer client.Close()
+//
+//	user := UserInfo{Username: "user", Password: "pass"}
+//	accessKey, err := client.Login(user)
 type BSdkV3Client struct {
 	client      *resty.Client
 	AccessKey   string // 登录后保存的 token
@@ -30,10 +88,15 @@ type BSdkV3Client struct {
 	config      *config.Config     // 客户端配置
 }
 
-// ClientOption 定义客户端选项
+// ClientOption 定义客户端选项函数类型，用于配置客户端行为
 type ClientOption func(*BSdkV3Client)
 
 // WithConfig 设置客户端配置
+//
+// 使用示例：
+//
+//	cfg := config.NewConfig(config.WithRequestTimeout(10 * time.Second))
+//	client, err := NewBSdkV3Client(appKey, WithConfig(cfg))
 func WithConfig(cfg *config.Config) ClientOption {
 	return func(c *BSdkV3Client) {
 		c.config = cfg
@@ -41,7 +104,26 @@ func WithConfig(cfg *config.Config) ClientOption {
 }
 
 // NewBSdkV3Client 创建一个新的 BSdkV3Client 实例。
-// 内部自动创建 context，调用方无需显式传递 context
+//
+// 该函数会自动：
+// - 创建内部 context 用于请求管理
+// - 初始化 HTTP 客户端
+// - 获取服务器配置和加密密钥
+//
+// 参数：
+//   - appKey: 应用密钥，用于签名计算
+//   - options: 可选的配置选项
+//
+// 返回错误类型：
+//   - *ConfigError: 配置获取或初始化失败
+//
+// 使用示例：
+//
+//	client, err := NewBSdkV3Client(config.AppkeyPcr)
+//	if err != nil {
+//		return err
+//	}
+//	defer client.Close()
 func NewBSdkV3Client(appKey string, options ...ClientOption) (*BSdkV3Client, error) {
 	// 创建一个带有取消功能的 context
 	ctx, cancel := context.WithCancel(context.Background())
@@ -66,14 +148,12 @@ func NewBSdkV3Client(appKey string, options ...ClientOption) (*BSdkV3Client, err
 		SetHeader("Content-Type", "application/x-www-form-urlencoded").
 		SetHeader("User-Agent", "Mozilla/5.0 BSGameSDK").
 		SetHeader("cversion", "1").
-		// debug
-		SetProxy("http://127.0.0.1:8080").
 		// 设置默认超时等
 		SetTimeout(client.config.RequestTimeout)
 
 	err := client.getConfig()
 	if err != nil {
-		return nil, fmt.Errorf("配置失败: %w", err)
+		return nil, NewConfigError("initialization", err)
 	}
 	return client, nil
 }
@@ -95,7 +175,7 @@ func (c *BSdkV3Client) getConfig() error {
 	}
 
 	log.Info("更新登录Hosts")
-	log.Debug(confResp.ConfigLoginHttps)
+	log.Debug("配置信息: %s", confResp.ConfigLoginHttps)
 	config.GetHostConfig().UpdateHosts(config.ParseHostsStr(config.HostTypeLoginHttps, confResp.ConfigLoginHttps))
 
 	cipherReq := NewBSdkGetCipherV3Req(c.config)
@@ -210,8 +290,33 @@ func (c *BSdkV3Client) execReq(ctx context.Context, request Request, result inte
 	return resp, nil
 }
 
-// Login 方法实现登录功能，支持验证码处理
-// 使用内部创建的 context，调用方无需显式传递
+// Login 执行用户登录流程，支持自动验证码处理。
+//
+// 该方法会自动处理以下步骤：
+// 1. 密码加密
+// 2. 发送登录请求
+// 3. 检查是否需要验证码
+// 4. 如需要，自动处理验证码验证
+// 5. 保存访问令牌
+//
+// 参数：
+//   - u: 用户登录信息，包含用户名和密码
+//
+// 返回：
+//   - *string: 成功时返回访问令牌
+//   - error: 失败时返回具体错误，可能的类型有 *AuthError
+//
+// 使用示例：
+//
+//	user := UserInfo{Username: "user", Password: "pass"}
+//	accessKey, err := client.Login(user)
+//	if err != nil {
+//		var authErr *AuthError
+//		if errors.As(err, &authErr) {
+//			log.Printf("认证失败 [%s]: %s", authErr.Code, authErr.Message)
+//		}
+//		return err
+//	}
 func (c *BSdkV3Client) Login(u UserInfo) (*string, error) {
 	// 使用内部创建的 context
 	ctx := c.ctx
@@ -257,7 +362,7 @@ func (c *BSdkV3Client) Login(u UserInfo) (*string, error) {
 			return nil, fmt.Errorf("验证码登录请求错误: %w", err)
 		}
 		if captLoginResp.Code.String() != "0" {
-			return nil, fmt.Errorf("验证码登录错误: (%s) %s", captLoginResp.Code.String(), *captLoginResp.Message)
+			return nil, NewAuthError(captLoginResp.Code.String(), *captLoginResp.Message, nil)
 		}
 
 		// 保存token（如果有的话）
@@ -271,7 +376,7 @@ func (c *BSdkV3Client) Login(u UserInfo) (*string, error) {
 		c.AccessKey = *loginResp.AccessKey
 		c.client.SetAuthToken(c.AccessKey)
 	} else {
-		return nil, fmt.Errorf("登录错误: (%s) %s", loginResp.Code.String(), *loginResp.Message)
+		return nil, NewAuthError(loginResp.Code.String(), *loginResp.Message, nil)
 	}
 
 	return &c.AccessKey, nil

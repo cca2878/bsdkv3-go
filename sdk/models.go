@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"time"
 
-	"bsdkv3/sdk/config"
+	"github.com/cca2878/bsdkv3-go/sdk/config"
 )
 
 // ClientRequest 添加关联客户端的请求接口
@@ -21,14 +21,16 @@ type ConfigRequest interface {
 	SetConfig(config *config.Config)
 }
 
-//	type User interface {
-//		GetUserInfo() UserInfo
-//	}
+// UserInfo 表示用户登录信息。
+//
+// 包含用户认证所需的基本信息。密码在传输前会被自动加密。
 type UserInfo struct {
-	Username string
-	Password string
+	Username string // 用户名
+	Password string // 密码（明文，将被自动加密）
 }
 
+// GetUserInfo 返回用户信息的副本。
+// 实现了内部 User 接口。
 func (u UserInfo) GetUserInfo() UserInfo {
 	return u
 }
@@ -272,15 +274,19 @@ type BSdkV3LoginResp struct {
 
 // BSdkV3CaptLogin
 
+// CaptchaParams 包含验证码验证所需的参数。
+//
+// 这些参数通常由远程验证服务提供，用于完成人机验证流程。
 type CaptchaParams struct {
-	CaptchaType string `form:"captcha_type"`
-	SecCode     string `form:"seccode"`
-	Validate    string `form:"validate"`
-	GtUserId    string `form:"gt_user_id"`
-	CToken      string `form:"ctoken"`
-	Challenge   string `form:"challenge"`
+	CaptchaType string `form:"captcha_type"` // 验证码类型，默认为 "1"
+	SecCode     string `form:"seccode"`      // 安全码
+	Validate    string `form:"validate"`     // 验证字符串
+	GtUserId    string `form:"gt_user_id"`   // 用户ID
+	CToken      string `form:"ctoken"`       // 验证令牌
+	Challenge   string `form:"challenge"`    // 挑战字符串
 }
 
+// NewCaptchaParams 创建验证码参数，如果未指定类型则使用默认值。
 func NewCaptchaParams(captParams CaptchaParams) CaptchaParams {
 	if captParams.CaptchaType == "" {
 		captParams.CaptchaType = config.DefaultCaptchaType

@@ -1,50 +1,85 @@
 package main
 
 import (
-	"bsdkv3/sdk"
-	"bsdkv3/sdk/config"
-	"bsdkv3/sdk/log"
-	"fmt"
+	"log"
+
+	"github.com/cca2878/bsdkv3-go/sdk"
+	"github.com/cca2878/bsdkv3-go/sdk/config"
+	sdklog "github.com/cca2878/bsdkv3-go/sdk/log"
 )
 
-func testValidator() {
-	log.SetLevel(log.LevelDebug)
-	ret, err := sdk.NewRemoteValidator().Validate()
-	if err != nil {
-		log.Error("验证失败！")
-		log.Error("错误信息：%s", err.Error())
-		return
-	}
-	// 直接使用结构化的结果
-	fmt.Printf("验证成功！\n")
-	fmt.Printf("Challenge: %s\n", ret.Challenge)
-	fmt.Printf("Gt: %s\n", ret.Gt)
-	fmt.Printf("GtUserId: %s\n", ret.GtUserId)
-	fmt.Printf("Validate: %s\n", ret.Validate)
+func main() {
+	// Set log level for debugging
+	sdklog.SetLevel(sdklog.LevelInfo)
+
+	// Example 1: Basic login
+	basicLoginExample()
+
+	// Example 2: Login with custom configuration
+	customConfigExample()
+
+	// Example 3: Validator testing
+	validatorExample()
 }
 
-func testLogin() {
-	log.SetLevel(log.LevelDebug)
+func basicLoginExample() {
+	log.Println("=== Basic Login Example ===")
+
 	user := sdk.UserInfo{
 		Username: "your_username",
 		Password: "your_password",
 	}
+
 	client, err := sdk.NewBSdkV3Client(config.AppkeyPcr)
 	if err != nil {
-		log.Error("创建客户端失败！")
-		log.Error("错误信息：%s", err.Error())
+		log.Printf("创建客户端失败: %v\n", err)
 		return
 	}
-	ret, err := client.Login(user)
+	defer client.Close()
+
+	accessKey, err := client.Login(user)
 	if err != nil {
-		log.Error("登录失败！")
-		log.Error("错误信息：%s", err.Error())
+		log.Printf("登录失败: %v\n", err)
 		return
 	}
-	log.Info("登录成功！" + *ret)
-	client.Close()
+
+	log.Printf("登录成功！Access Key: %s\n", *accessKey)
 }
 
-func main() {
-	testLogin()
+func customConfigExample() {
+	log.Println("\n=== Custom Configuration Example ===")
+
+	// Create custom configuration
+	cfg := config.NewConfig(
+		config.WithAppId("custom_app_id"),
+		config.WithPlatform("1"), // Different platform
+	)
+
+	client, err := sdk.NewBSdkV3Client(config.AppkeyPcr, sdk.WithConfig(cfg))
+	if err != nil {
+		log.Printf("创建客户端失败: %v\n", err)
+		return
+	}
+	defer client.Close()
+
+	log.Printf("客户端配置: AppId=%s, Platform=%s\n",
+		client.GetConfig().RequestConfig.AppId,
+		client.GetConfig().RequestConfig.Platform)
+}
+
+func validatorExample() {
+	log.Println("\n=== Validator Example ===")
+
+	validator := sdk.NewRemoteValidator()
+	result, err := validator.Validate()
+	if err != nil {
+		log.Printf("验证失败: %v\n", err)
+		return
+	}
+
+	log.Printf("验证成功!\n")
+	log.Printf("Challenge: %s\n", result.Challenge)
+	log.Printf("Gt: %s\n", result.Gt)
+	log.Printf("GtUserId: %s\n", result.GtUserId)
+	log.Printf("Validate: %s\n", result.Validate)
 }

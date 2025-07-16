@@ -8,7 +8,7 @@ import (
 	"math"
 	"time"
 
-	"bsdkv3/sdk/log"
+	"github.com/cca2878/bsdkv3-go/sdk/log"
 )
 
 // ValidatorResult 定义验证结果的标准化结构

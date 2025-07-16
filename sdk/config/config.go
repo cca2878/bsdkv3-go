@@ -1,4 +1,26 @@
-// Package config 提供项目中使用的所有常量配置
+// Package config 提供项目中使用的所有常量配置和配置管理功能。
+//
+// 该包支持灵活的配置选项，允许用户自定义各种请求参数和客户端行为。
+//
+// # 使用默认配置
+//
+//	cfg := config.NewDefaultConfig()
+//
+// # 使用自定义配置选项
+//
+//	cfg := config.NewConfig(
+//		config.WithRequestTimeout(10 * time.Second),
+//		config.WithAppId("custom_app_id"),
+//		config.WithPlatform("1"),
+//	)
+//
+// # 配置选项
+//
+// 包提供了多种配置选项函数（With* 系列函数），可以用来定制：
+// - 请求超时时间
+// - 应用程序标识
+// - 平台类型
+// - 各种请求参数
 package config
 
 import (
