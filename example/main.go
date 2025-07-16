@@ -1,15 +1,15 @@
 package main
 
 import (
-	"bsdkv3/sdk"
-	"bsdkv3/sdk/config"
-	"bsdkv3/sdk/log"
+	"bsdkv3-go/sdk"
+	"bsdkv3-go/sdk/config"
+	"bsdkv3-go/sdk/log"
 	"fmt"
 )
 
 func testValidator() {
 	log.SetLevel(log.LevelDebug)
-	ret, err := sdk.NewRemoteValidator().Validate()
+	ret, err := bsdkv3.NewRemoteValidator().Validate()
 	if err != nil {
 		log.Error("验证失败！")
 		log.Error("错误信息：%s", err.Error())
@@ -25,11 +25,11 @@ func testValidator() {
 
 func testLogin() {
 	log.SetLevel(log.LevelDebug)
-	user := sdk.UserInfo{
+	user := bsdkv3.UserInfo{
 		Username: "your_username",
 		Password: "your_password",
 	}
-	client, err := sdk.NewBSdkV3Client(config.AppkeyPcr)
+	client, err := bsdkv3.NewClient(config.AppkeyPcr)
 	if err != nil {
 		log.Error("创建客户端失败！")
 		log.Error("错误信息：%s", err.Error())
@@ -41,10 +41,12 @@ func testLogin() {
 		log.Error("错误信息：%s", err.Error())
 		return
 	}
-	log.Info("登录成功！" + *ret)
+	log.Info("登录成功！")
+	log.Info(fmt.Sprint(ret))
 	client.Close()
 }
 
 func main() {
 	testLogin()
+
 }

@@ -1,4 +1,4 @@
-package sdk
+package bsdkv3
 
 import (
 	"crypto/rand"

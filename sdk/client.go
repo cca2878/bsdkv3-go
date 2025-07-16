@@ -1,4 +1,4 @@
-package sdk
+package bsdkv3
 
 import (
 	"context"
@@ -11,16 +11,16 @@ import (
 	"github.com/go-resty/resty/v2"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 
-	"bsdkv3/sdk/config"
-	"bsdkv3/sdk/log"
+	"bsdkv3-go/sdk/config"
+	"bsdkv3-go/sdk/log"
 )
 
-// BSdkV3Client 封装 HTTP 客户端和 API 调用
-type BSdkV3Client struct {
+// Client 封装 HTTP 客户端和 API 调用
+type Client struct {
 	client      *resty.Client
-	AccessKey   string // 登录后保存的 token
 	formEncoder *form.Encoder
 	publicKey   *rsa.PublicKey
 	pwdHash     string
@@ -31,23 +31,23 @@ type BSdkV3Client struct {
 }
 
 // ClientOption 定义客户端选项
-type ClientOption func(*BSdkV3Client)
+type ClientOption func(*Client)
 
-// WithConfig 设置客户端配置
-func WithConfig(cfg *config.Config) ClientOption {
-	return func(c *BSdkV3Client) {
+// withConfig 设置客户端配置
+func withConfig(cfg *config.Config) ClientOption {
+	return func(c *Client) {
 		c.config = cfg
 	}
 }
 
-// NewBSdkV3Client 创建一个新的 BSdkV3Client 实例。
+// NewClient 创建一个新的 Client 实例。
 // 内部自动创建 context，调用方无需显式传递 context
-func NewBSdkV3Client(appKey string, options ...ClientOption) (*BSdkV3Client, error) {
+func NewClient(appKey string, options ...ClientOption) (*Client, error) {
 	// 创建一个带有取消功能的 context
 	ctx, cancel := context.WithCancel(context.Background())
 
 	// 使用默认配置创建客户端
-	client := &BSdkV3Client{
+	client := &Client{
 		formEncoder: form.NewEncoder(),
 		appKey:      appKey,
 		ctx:         ctx,
@@ -62,12 +62,14 @@ func NewBSdkV3Client(appKey string, options ...ClientOption) (*BSdkV3Client, err
 
 	// 创建并配置 HTTP 客户端
 	client.client = resty.New().
-		// 设置默认Content-Type为form-urlencoded
-		SetHeader("Content-Type", "application/x-www-form-urlencoded").
-		SetHeader("User-Agent", "Mozilla/5.0 BSGameSDK").
-		SetHeader("cversion", "1").
+		// 设置Headers
+		SetHeaders(map[string]string{
+			"Content-Type": "application/x-www-form-urlencoded",
+			"User-Agent":   "Mozilla/5.0 BSGameSDK",
+			"cversion":     "1",
+		}).
 		// debug
-		SetProxy("http://127.0.0.1:8080").
+		//SetProxy("http://127.0.0.1:8080").
 		// 设置默认超时等
 		SetTimeout(client.config.RequestTimeout)
 
@@ -78,14 +80,9 @@ func NewBSdkV3Client(appKey string, options ...ClientOption) (*BSdkV3Client, err
 	return client, nil
 }
 
-// GetConfig 返回客户端配置
-func (c *BSdkV3Client) GetConfig() *config.Config {
-	return c.config
-}
-
-func (c *BSdkV3Client) getConfig() error {
-	confReq := NewBSdkV3ExtConfReq(c.config)
-	var confResp BSdkV3ExtConfResp
+func (c *Client) getConfig() error {
+	confReq := newExtConfReq(c.config)
+	var confResp extConfResp
 	_, err := c.execReq(c.ctx, confReq, &confResp)
 	if err != nil {
 		return fmt.Errorf("获取外部配置失败: %w", err)
@@ -98,8 +95,8 @@ func (c *BSdkV3Client) getConfig() error {
 	log.Debug(confResp.ConfigLoginHttps)
 	config.GetHostConfig().UpdateHosts(config.ParseHostsStr(config.HostTypeLoginHttps, confResp.ConfigLoginHttps))
 
-	cipherReq := NewBSdkGetCipherV3Req(c.config)
-	var cipherResp BSdkGetCipherV3Resp
+	cipherReq := newGetCipherV3Req(c.config)
+	var cipherResp getCipherV3Resp
 	_, err = c.execReq(c.ctx, cipherReq, &cipherResp)
 	if err != nil {
 		return fmt.Errorf("获取密钥失败: %w", err)
@@ -114,8 +111,8 @@ func (c *BSdkV3Client) getConfig() error {
 	return nil
 }
 
-// calculateSign 计算请求签名
-func (c *BSdkV3Client) calculateSign(requestBody interface{}) (string, error) {
+// calcSign 计算请求签名
+func (c *Client) calcSign(requestBody interface{}) (string, error) {
 	// 请求体编码为map
 	values, err := c.formEncoder.Encode(requestBody)
 	if err != nil {
@@ -144,7 +141,7 @@ func (c *BSdkV3Client) calculateSign(requestBody interface{}) (string, error) {
 }
 
 // hashPwd 对密码进行加密
-func (c *BSdkV3Client) hashPwd(pwd string) (string, error) {
+func (c *Client) hashPwd(pwd string) (string, error) {
 	data, err := encryptPKCS1v15(c.publicKey, []byte(c.pwdHash+pwd))
 	if err != nil {
 		return "", fmt.Errorf("加密密码失败: %w", err)
@@ -152,10 +149,10 @@ func (c *BSdkV3Client) hashPwd(pwd string) (string, error) {
 	return base64.StdEncoding.EncodeToString(data), nil
 }
 
-// prepareRequest 准备请求，处理签名和表单数据
-func (c *BSdkV3Client) prepareRequest(ctx context.Context, requestBody interface{}) (*resty.Request, error) {
+// preReq 准备请求，处理签名和表单数据
+func (c *Client) preReq(ctx context.Context, requestBody interface{}) (*resty.Request, error) {
 	// 计算签名
-	sign, err := c.calculateSign(requestBody)
+	sign, err := c.calcSign(requestBody)
 	if err != nil {
 		return nil, fmt.Errorf("计算签名失败: %w", err)
 	}
@@ -178,14 +175,14 @@ func (c *BSdkV3Client) prepareRequest(ctx context.Context, requestBody interface
 }
 
 // execReq
-func (c *BSdkV3Client) execReq(ctx context.Context, request Request, result interface{}) (*resty.Response, error) {
-	req, err := c.prepareRequest(ctx, request)
+func (c *Client) execReq(ctx context.Context, request iRequest, result any) (*resty.Response, error) {
+	req, err := c.preReq(ctx, request)
 	if err != nil {
 		log.Error("准备请求失败: %v", err)
 		return nil, err
 	}
 
-	url, err := request.GetUrl()
+	url, err := request.getUrl()
 	if err != nil {
 		log.Error("获取URL失败: %v", err)
 		return nil, err
@@ -194,7 +191,7 @@ func (c *BSdkV3Client) execReq(ctx context.Context, request Request, result inte
 	log.Debug("发送请求: %s", url.String())
 
 	// 发送请求并处理结果
-	resp, err := req.SetResult(result).Post(url.String())
+	resp, err := req.SetResult(result).Execute(request.getMethod(), url.String())
 	if err != nil {
 		log.Error("请求发送失败: %v", err)
 		return resp, err
@@ -212,7 +209,7 @@ func (c *BSdkV3Client) execReq(ctx context.Context, request Request, result inte
 
 // Login 方法实现登录功能，支持验证码处理
 // 使用内部创建的 context，调用方无需显式传递
-func (c *BSdkV3Client) Login(u UserInfo) (*string, error) {
+func (c *Client) Login(u UserInfo) (*SdkAccount, error) {
 	// 使用内部创建的 context
 	ctx := c.ctx
 	// Hash密码
@@ -221,16 +218,13 @@ func (c *BSdkV3Client) Login(u UserInfo) (*string, error) {
 		return nil, fmt.Errorf("密码哈希计算失败: %w", err)
 	}
 
-	user := UserInfo{
-		Username: u.Username,
-		Password: pwdHash,
-	}
-
 	// 构造登录请求
-	loginReq := NewBSdkV3LoginReq(c.config, user)
+	loginReq := newLoginReq(c.config).(*loginReq)
+	loginReq.UserId = u.Username
+	loginReq.Pwd = pwdHash
 
 	// 发起第一次登录请求
-	var loginResp BSdkV3LoginResp
+	var loginResp loginResp
 	_, err = c.execReq(ctx, loginReq, &loginResp)
 
 	if err != nil {
@@ -246,10 +240,12 @@ func (c *BSdkV3Client) Login(u UserInfo) (*string, error) {
 		}
 
 		// 构造带验证码的登录请求
-		captLoginReq := NewBSdkV3CaptLoginReq(c.config, user, *captchaParams)
+		captLoginReq := newCaptLoginReq(c.config, *captchaParams).(*captLoginReq)
+		captLoginReq.UserId = u.Username
+		captLoginReq.Pwd = pwdHash
 
 		// 发起带验证码的登录请求
-		var captLoginResp BSdkV3CaptLoginResp
+		var captLoginResp captLoginResp
 
 		_, err = c.execReq(ctx, captLoginReq, &captLoginResp)
 
@@ -260,39 +256,48 @@ func (c *BSdkV3Client) Login(u UserInfo) (*string, error) {
 			return nil, fmt.Errorf("验证码登录错误: (%s) %s", captLoginResp.Code.String(), *captLoginResp.Message)
 		}
 
-		// 保存token（如果有的话）
+		// AccessKey（如果有的话）
 		if captLoginResp.AccessKey != nil {
-			c.AccessKey = *captLoginResp.AccessKey
-			c.client.SetAuthToken(c.AccessKey)
+			return &SdkAccount{
+				AccessKey: *captLoginResp.AccessKey,
+				Uid:       strconv.Itoa(*captLoginResp.Uid),
+				Platform:  u.Platform,
+				Channel:   u.Channel,
+			}, nil
+		} else {
+			return nil, fmt.Errorf("登录错误: (%s) %s", loginResp.Code.String(), *loginResp.Message)
 		}
 	} else
 	// 不需要验证码，直接使用第一次登录的结果
 	if loginResp.Code.String() == "0" && loginResp.AccessKey != nil {
-		c.AccessKey = *loginResp.AccessKey
-		c.client.SetAuthToken(c.AccessKey)
+		return &SdkAccount{
+			AccessKey: *loginResp.AccessKey,
+			Uid:       strconv.Itoa(*loginResp.Uid),
+			Platform:  u.Platform,
+			Channel:   u.Channel,
+		}, nil
 	} else {
 		return nil, fmt.Errorf("登录错误: (%s) %s", loginResp.Code.String(), *loginResp.Message)
 	}
 
-	return &c.AccessKey, nil
 }
 
-func (c *BSdkV3Client) handleCaptcha(ctx context.Context) (*CaptchaParams, error) {
+func (c *Client) handleCaptcha(ctx context.Context) (*captchaParams, error) {
 	// 请求验证码参数
-	captchaReq := NewBSdkStartCaptchaReq(c.config)
+	captchaReq := newStartCaptchaReq(c.config)
 
 	// 准备请求，处理签名和表单数据
-	req, err := c.prepareRequest(ctx, captchaReq)
+	req, err := c.preReq(ctx, captchaReq)
 	if err != nil {
 		return nil, fmt.Errorf("准备验证码请求失败: %w", err)
 	}
 
-	url, err := captchaReq.GetUrl()
+	url, err := captchaReq.getUrl()
 	if err != nil {
 		return nil, fmt.Errorf("获取验证码URL失败: %w", err)
 	}
 
-	var captchaResp BSdkStartCaptchaResp
+	var captchaResp startCaptchaResp
 	resp, err := req.
 		SetResult(&captchaResp).
 		Post(url.String())
@@ -313,7 +318,7 @@ func (c *BSdkV3Client) handleCaptcha(ctx context.Context) (*CaptchaParams, error
 	}
 
 	// 构造验证码参数
-	captchaParams := CaptchaParams{
+	captchaParams := captchaParams{
 		CaptchaType: "1",
 		Validate:    ret.Validate,
 		Challenge:   ret.Challenge,
@@ -326,11 +331,11 @@ func (c *BSdkV3Client) handleCaptcha(ctx context.Context) (*CaptchaParams, error
 }
 
 // startCaptcha 方法获取验证码信息
-func (c *BSdkV3Client) startCaptcha(ctx context.Context) (*BSdkStartCaptchaResp, error) {
+func (c *Client) startCaptcha(ctx context.Context) (*startCaptchaResp, error) {
 	// 构造请求体
-	captchaReq := NewBSdkStartCaptchaReq(c.config)
+	captchaReq := newStartCaptchaReq(c.config)
 
-	var result BSdkStartCaptchaResp
+	var result startCaptchaResp
 	// 发起 POST 请求
 	_, err := c.execReq(ctx, captchaReq, &result)
 
@@ -342,7 +347,7 @@ func (c *BSdkV3Client) startCaptcha(ctx context.Context) (*BSdkStartCaptchaResp,
 }
 
 // Close 关闭客户端并取消所有未完成的请求
-func (c *BSdkV3Client) Close() {
+func (c *Client) Close() {
 	if c.ctxCancel != nil {
 		c.ctxCancel()
 	}

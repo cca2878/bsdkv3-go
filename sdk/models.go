@@ -1,25 +1,13 @@
-package sdk
+package bsdkv3
 
 import (
+	"bsdkv3-go/sdk/config"
 	"encoding/json"
+	"net/http"
 	"net/url"
 	"strconv"
 	"time"
-
-	"bsdkv3/sdk/config"
 )
-
-// ClientRequest 添加关联客户端的请求接口
-type ClientRequest interface {
-	Request
-	SetClient(client *BSdkV3Client)
-}
-
-// ConfigRequest 添加关联配置的请求接口
-type ConfigRequest interface {
-	Request
-	SetConfig(config *config.Config)
-}
 
 //	type User interface {
 //		GetUserInfo() UserInfo
@@ -27,20 +15,34 @@ type ConfigRequest interface {
 type UserInfo struct {
 	Username string
 	Password string
+
+	Platform string
+	Channel  string
 }
 
-func (u UserInfo) GetUserInfo() UserInfo {
-	return u
+type SdkAccount struct {
+	Uid       string
+	AccessKey string
+
+	Platform string
+	Channel  string
 }
 
-// 请求相关常量
-const (
-	// MethodPost HTTP方法 - POST
-	MethodPost = "POST"
-)
+// Req Resp base interface
 
-// BaseRequest 基础请求公共字段
-type BaseRequest struct {
+type iRequest interface {
+	setConfig(config *config.Config)
+	// GetMethod Http Method
+	getMethod() string
+	// GetUrl API Url
+	getUrl() (*url.URL, error)
+}
+
+type iResponse interface {
+}
+
+// baseRequest 基础请求公共字段
+type baseRequest struct {
 	// 关联的配置
 	config *config.Config
 
@@ -67,23 +69,24 @@ type BaseRequest struct {
 	Timestamp         string `form:"timestamp"`
 	OriginalDomain    string `form:"original_domain"`
 	Domain            string `form:"domain"`
+	Sign              string `form:"sign"`
 }
 
 // SetConfig 设置关联的配置
-func (b *BaseRequest) SetConfig(config *config.Config) {
+func (b *baseRequest) setConfig(config *config.Config) {
 	b.config = config
 }
 
 // setDomainFromUrl 从 URL 更新 Domain 和 OriginalDomain 字段
-func (b *BaseRequest) setDomainFromUrl(u *url.URL) {
+func (b *baseRequest) setDomainFromUrl(u *url.URL) {
 	if u != nil {
 		b.Domain = u.Host
 		b.OriginalDomain = u.Scheme + "://" + u.Host
 	}
 }
 
-// NewBaseRequest 创建基础请求对象
-func NewBaseRequest(conf *config.Config) BaseRequest {
+// newBaseRequest 创建基础请求对象
+func newBaseRequest(conf *config.Config) baseRequest {
 	// 确定使用哪个配置
 	var reqConf config.RequestConfig
 	if conf != nil {
@@ -92,7 +95,9 @@ func NewBaseRequest(conf *config.Config) BaseRequest {
 		reqConf = config.NewDefaultConfig().RequestConfig
 	}
 
-	return BaseRequest{
+	return baseRequest{
+		config: conf,
+
 		CurBuvid:          reqConf.CurBuvid,
 		OldBuvid:          reqConf.OldBuvid,
 		UdId:              reqConf.UdId,
@@ -116,31 +121,16 @@ func NewBaseRequest(conf *config.Config) BaseRequest {
 		Timestamp:         strconv.FormatInt(time.Now().UnixMilli(), 10),
 		Domain:            reqConf.Domain,
 		OriginalDomain:    reqConf.OriginalDomain,
-		config:            conf,
 	}
 }
 
-// API路径常量
-
-func parseModelUrl(host string, path string) (*url.URL, error) {
+func parseModelUrl(hostType config.HostType, path string) (*url.URL, error) {
+	host := config.GetHostConfig().GetHost(hostType)
 	u, err := url.Parse(host + path)
 	if err != nil {
 		return nil, err
 	}
 	return u, nil
-}
-
-// Req Resp base interface
-
-type Request interface {
-
-	// GetMethod Http Method
-	GetMethod() string
-	// GetUrl API Url
-	GetUrl() (*url.URL, error)
-}
-
-type Response interface {
 }
 
 // BSdkV3ExtConf
@@ -150,32 +140,30 @@ const (
 	extConfAPIPath = "/api/external/config/v3"
 )
 
-type BSdkV3ExtConfReq struct {
-	BaseRequest
+type extConfReq struct {
+	baseRequest
 }
-type BSdkV3ExtConfResp struct {
+type extConfResp struct {
 	ConfigLoginHttps   string `json:"config_login_https"`
 	ConfigAndroidHttps string `json:"config_login_android_https"`
 }
 
-// 以下是修改 BSdkV3ExtConfReq 的例子，其他请求类似修改
-
-func NewBSdkV3ExtConfReq(conf *config.Config) BSdkV3ExtConfReq {
-	req := BSdkV3ExtConfReq{
-		BaseRequest: NewBaseRequest(conf),
+func newExtConfReq(conf *config.Config) iRequest {
+	req := extConfReq{
+		baseRequest: newBaseRequest(conf),
 	}
-	if reqUrl, err := req.GetUrl(); err == nil {
+	if reqUrl, err := req.getUrl(); err == nil {
 		req.setDomainFromUrl(reqUrl)
 	}
-	return req
+	return &req
 }
 
-func (rq BSdkV3ExtConfReq) GetMethod() string {
-	return MethodPost
+func (rq extConfReq) getMethod() string {
+	return http.MethodPost
 }
 
-func (rq BSdkV3ExtConfReq) GetUrl() (*url.URL, error) {
-	return parseModelUrl(config.GetHostConfig().GetHost(config.HostTypeInitConf), extConfAPIPath)
+func (rq extConfReq) getUrl() (*url.URL, error) {
+	return parseModelUrl(config.HostTypeInitConf, extConfAPIPath)
 }
 
 // BSdkGetCipherV3
@@ -186,34 +174,34 @@ const (
 	cipherType         = "bili_login_rsa"
 )
 
-// BSdkGetCipherV3Req 获取密钥请求
-type BSdkGetCipherV3Req struct {
-	BaseRequest
+// getCipherV3Req 获取密钥请求
+type getCipherV3Req struct {
+	baseRequest
 	CipherType string `form:"cipher_type"`
 }
 
-// NewBSdkGetCipherV3Req 创建获取密钥请求实例
-func NewBSdkGetCipherV3Req(conf *config.Config) BSdkGetCipherV3Req {
-	req := BSdkGetCipherV3Req{
-		BaseRequest: NewBaseRequest(conf),
+// newGetCipherV3Req 创建获取密钥请求实例
+func newGetCipherV3Req(conf *config.Config) iRequest {
+	req := getCipherV3Req{
+		baseRequest: newBaseRequest(conf),
 		CipherType:  cipherType,
 	}
-	if reqUrl, err := req.GetUrl(); err == nil {
+	if reqUrl, err := req.getUrl(); err == nil {
 		req.setDomainFromUrl(reqUrl)
 	}
-	return req
+	return &req
 }
 
-func (rq BSdkGetCipherV3Req) GetMethod() string {
-	return MethodPost
+func (rq getCipherV3Req) getMethod() string {
+	return http.MethodPost
 }
 
-func (rq BSdkGetCipherV3Req) GetUrl() (*url.URL, error) {
-	return parseModelUrl(config.GetHostConfig().GetHost(config.HostTypeLoginHttps), getCipherV3APIPath)
+func (rq getCipherV3Req) getUrl() (*url.URL, error) {
+	return parseModelUrl(config.HostTypeLoginHttps, getCipherV3APIPath)
 }
 
-// BSdkGetCipherV3Resp 获取密钥响应
-type BSdkGetCipherV3Resp struct {
+// getCipherV3Resp 获取密钥响应
+type getCipherV3Resp struct {
 	CipherKey string `json:"cipher_key"`
 	Hash      string `json:"hash"`
 }
@@ -223,40 +211,38 @@ type BSdkGetCipherV3Resp struct {
 const (
 	// loginAPIPath 登录API路径，与CaptLogin统一
 	loginAPIPath = "/api/external/login/v3"
-	BdInfo       = "cr_nmsl"
+	bdInfo       = "cr_nmsl"
 )
 
-type BSdkV3LoginReq struct {
-	BaseRequest
+type loginReq struct {
+	baseRequest
 	BdInfo string `form:"bd_info"`
 	UserId string `form:"user_id"`
 	Pwd    string `form:"pwd"`
 }
 
-// NewBSdkV3LoginReq Factory Func
-func NewBSdkV3LoginReq(conf *config.Config, user UserInfo) BSdkV3LoginReq {
+// newLoginReq Factory Func
+func newLoginReq(conf *config.Config) iRequest {
 	//userInfo := user.GetUserInfo()
-	req := BSdkV3LoginReq{
-		BaseRequest: NewBaseRequest(conf),
-		BdInfo:      BdInfo,
-		UserId:      user.Username,
-		Pwd:         user.Password,
+	req := loginReq{
+		baseRequest: newBaseRequest(conf),
+		BdInfo:      bdInfo,
 	}
-	if reqUrl, err := req.GetUrl(); err == nil {
+	if reqUrl, err := req.getUrl(); err == nil {
 		req.setDomainFromUrl(reqUrl)
 	}
-	return req
+	return &req
 }
 
-func (rq BSdkV3LoginReq) GetMethod() string {
-	return config.MethodPost
+func (rq loginReq) getMethod() string {
+	return http.MethodPost
 }
 
-func (rq BSdkV3LoginReq) GetUrl() (*url.URL, error) {
-	return parseModelUrl(config.GetHostConfig().GetHost(config.HostTypeLoginHttps), loginAPIPath)
+func (rq loginReq) getUrl() (*url.URL, error) {
+	return parseModelUrl(config.HostTypeLoginHttps, loginAPIPath)
 }
 
-type BSdkV3LoginResp struct {
+type loginResp struct {
 	// Code 你B程序员num和str混用
 	Code *json.Number `json:"code"`
 
@@ -272,7 +258,7 @@ type BSdkV3LoginResp struct {
 
 // BSdkV3CaptLogin
 
-type CaptchaParams struct {
+type captchaParams struct {
 	CaptchaType string `form:"captcha_type"`
 	SecCode     string `form:"seccode"`
 	Validate    string `form:"validate"`
@@ -281,40 +267,41 @@ type CaptchaParams struct {
 	Challenge   string `form:"challenge"`
 }
 
-func NewCaptchaParams(captParams CaptchaParams) CaptchaParams {
+func newCaptchaParams(captParams captchaParams) captchaParams {
 	if captParams.CaptchaType == "" {
 		captParams.CaptchaType = config.DefaultCaptchaType
 	}
 	return captParams
 }
 
-type BSdkV3CaptLoginReq struct {
-	BSdkV3LoginReq
-	CaptchaParams
+type captLoginReq struct {
+	loginReq
+	captchaParams
 }
 
-// NewBSdkV3CaptLoginReq Factory Func
-func NewBSdkV3CaptLoginReq(conf *config.Config, user UserInfo, captParams CaptchaParams) BSdkV3CaptLoginReq {
-	req := BSdkV3CaptLoginReq{
-		BSdkV3LoginReq: NewBSdkV3LoginReq(conf, user),
-		CaptchaParams:  NewCaptchaParams(captParams),
+// newCaptLoginReq Factory Func
+func newCaptLoginReq(conf *config.Config, captParams captchaParams) iRequest {
+	loginReq := newLoginReq(conf).(*loginReq)
+	req := captLoginReq{
+		loginReq:      *loginReq,
+		captchaParams: newCaptchaParams(captParams),
 	}
-	if reqUrl, err := req.GetUrl(); err == nil {
+	if reqUrl, err := req.getUrl(); err == nil {
 		req.setDomainFromUrl(reqUrl)
 	}
-	return req
+	return &req
 }
 
-func (rq BSdkV3CaptLoginReq) GetMethod() string {
-	return config.MethodPost
+func (rq captLoginReq) getMethod() string {
+	return http.MethodPost
 }
 
-func (rq BSdkV3CaptLoginReq) GetUrl() (*url.URL, error) {
-	return parseModelUrl(config.GetHostConfig().GetHost(config.HostTypeLoginHttps), loginAPIPath)
+func (rq captLoginReq) getUrl() (*url.URL, error) {
+	return parseModelUrl(config.HostTypeLoginHttps, loginAPIPath)
 }
 
-type BSdkV3CaptLoginResp struct {
-	BSdkV3LoginResp
+type captLoginResp struct {
+	loginResp
 }
 
 // BSdkStartCaptcha
@@ -324,34 +311,34 @@ const (
 	captchaAPIPath = "/api/client/start_captcha"
 )
 
-// BSdkStartCaptchaReq 开始验证码请求
-type BSdkStartCaptchaReq struct {
-	BaseRequest
+// startCaptchaReq 开始验证码请求
+type startCaptchaReq struct {
+	baseRequest
 	Version string `form:"version"`
 }
 
-// NewBSdkStartCaptchaReq 创建验证码请求实例
-func NewBSdkStartCaptchaReq(conf *config.Config) BSdkStartCaptchaReq {
-	req := BSdkStartCaptchaReq{
-		BaseRequest: NewBaseRequest(conf),
+// newStartCaptchaReq 创建验证码请求实例
+func newStartCaptchaReq(conf *config.Config) iRequest {
+	req := startCaptchaReq{
+		baseRequest: newBaseRequest(conf),
 		Version:     config.DefaultCaptchaVersion,
 	}
-	if reqUrl, err := req.GetUrl(); err == nil {
+	if reqUrl, err := req.getUrl(); err == nil {
 		req.setDomainFromUrl(reqUrl)
 	}
-	return req
+	return &req
 }
 
-func (rq BSdkStartCaptchaReq) GetMethod() string {
-	return config.MethodPost
+func (rq startCaptchaReq) getMethod() string {
+	return http.MethodPost
 }
 
-func (rq BSdkStartCaptchaReq) GetUrl() (*url.URL, error) {
-	return parseModelUrl(config.GetHostConfig().GetHost(config.HostTypeLoginHttps), captchaAPIPath)
+func (rq startCaptchaReq) getUrl() (*url.URL, error) {
+	return parseModelUrl(config.HostTypeLoginHttps, captchaAPIPath)
 }
 
-// BSdkStartCaptchaResp 开始验证码响应
-type BSdkStartCaptchaResp struct {
+// startCaptchaResp 开始验证码响应
+type startCaptchaResp struct {
 	CaptchaType int    `json:"captcha_type"`
 	Gs          int    `json:"gs"`
 	Gt          string `json:"gt"`

@@ -1,4 +1,4 @@
-package sdk
+package bsdkv3
 
 import (
 	"encoding/json"
@@ -8,7 +8,7 @@ import (
 	"math"
 	"time"
 
-	"bsdkv3/sdk/log"
+	"bsdkv3-go/sdk/log"
 )
 
 // ValidatorResult 定义验证结果的标准化结构

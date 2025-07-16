@@ -1,4 +1,4 @@
-module bsdkv3
+module bsdkv3-go
 
 go 1.24
 

@@ -6,21 +6,21 @@ import (
 	"time"
 )
 
-type hostType string
+type HostType string
 
 const (
-	HostTypeInitConf   hostType = "init_conf"   // 初始配置
-	HostTypeLoginHttps hostType = "login_https" // 登录 HTTPS API
+	HostTypeInitConf   HostType = "init_conf"   // 初始配置
+	HostTypeLoginHttps HostType = "login_https" // 登录 HTTPS API
 )
 
-var DefaultHosts = map[hostType]string{
+var DefaultHosts = map[HostType]string{
 	HostTypeInitConf:   defaultInitConfHost,
 	HostTypeLoginHttps: defaultLoginHttpsHost,
 }
 
 type HostConfig struct {
 	mu           sync.RWMutex
-	hosts        map[hostType][]string
+	hosts        map[HostType][]string
 	lastUpdate   time.Time
 	updatePeriod time.Duration
 }
@@ -32,7 +32,7 @@ var (
 
 func init() {
 	hostConfig = &HostConfig{
-		hosts:        make(map[hostType][]string),
+		hosts:        make(map[HostType][]string),
 		updatePeriod: 5 * time.Minute,
 	}
 
@@ -42,8 +42,8 @@ func init() {
 	}
 }
 
-func ParseHostsStr(hostsType hostType, hostsStr string) map[hostType][]string {
-	return map[hostType][]string{
+func ParseHostsStr(hostsType HostType, hostsStr string) map[HostType][]string {
+	return map[HostType][]string{
 		hostsType: strings.Split(hostsStr, ","),
 	}
 }
@@ -53,7 +53,7 @@ func GetHostConfig() *HostConfig {
 	return hostConfig
 }
 
-func (h *HostConfig) GetHost(hostType hostType) string {
+func (h *HostConfig) GetHost(hostType HostType) string {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
@@ -63,7 +63,7 @@ func (h *HostConfig) GetHost(hostType hostType) string {
 	return DefaultHosts[hostType]
 }
 
-func (h *HostConfig) UpdateHosts(newHosts map[hostType][]string) {
+func (h *HostConfig) UpdateHosts(newHosts map[HostType][]string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 

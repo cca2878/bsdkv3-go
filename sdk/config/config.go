@@ -29,8 +29,6 @@ const (
 
 // 请求相关常量
 const (
-	// MethodPost HTTP方法 - POST
-	MethodPost = "POST"
 
 	// DefaultRequestTimeout 默认请求超时时间(秒)
 	DefaultRequestTimeout = 5
