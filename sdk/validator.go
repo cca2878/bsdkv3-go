@@ -1,3 +1,9 @@
+// Package bsdkv3 provides captcha validation services for the BSdk V3 client.
+//
+// This file contains validation interfaces and implementations including:
+//   - Remote captcha validation service
+//   - Validation result structures
+//   - Polling mechanisms for captcha completion
 package bsdkv3
 
 import (

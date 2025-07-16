@@ -1,3 +1,31 @@
+// Package bsdkv3 provides a Go SDK client for BSdk V3 authentication and validation services.
+//
+// The SDK offers a simple API for user authentication with features including:
+//   - Password encryption using RSA PKCS#1 v1.5
+//   - Automatic captcha handling
+//   - Configurable client options
+//   - Comprehensive logging
+//   - Host configuration management
+//
+// Basic usage:
+//
+//	client, err := bsdkv3.NewClient(config.AppkeyPcr)
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+//	defer client.Close()
+//
+//	user := bsdkv3.UserInfo{
+//	    Username: "username",
+//	    Password: "password",
+//	}
+//
+//	account, err := client.Login(user)
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+//
+// The package supports various configuration options through the config package.
 package bsdkv3
 
 import (
@@ -18,155 +46,196 @@ import (
 	"bsdkv3-go/sdk/log"
 )
 
-// Client 封装 HTTP 客户端和 API 调用
+// Client provides an HTTP client wrapper for BSdk V3 API operations.
+// It handles authentication, request signing, and response processing.
+//
+// The client manages:
+//   - HTTP client configuration and timeouts
+//   - Request signing with MD5 signatures
+//   - Password encryption using RSA public keys
+//   - Automatic host configuration updates
+//   - Context management for request cancellation
 type Client struct {
-	client      *resty.Client
-	formEncoder *form.Encoder
-	publicKey   *rsa.PublicKey
-	pwdHash     string
-	appKey      string
-	ctx         context.Context    // 内部创建的 context
-	ctxCancel   context.CancelFunc // 用于取消 context
-	config      *config.Config     // 客户端配置
+	client      *resty.Client      // HTTP client for making requests
+	formEncoder *form.Encoder      // Form encoder for request bodies
+	publicKey   *rsa.PublicKey     // RSA public key for password encryption
+	pwdHash     string             // Password hash salt from server
+	appKey      string             // Application key for API authentication
+	ctx         context.Context    // Client context for request lifecycle
+	ctxCancel   context.CancelFunc // Function to cancel client context
+	config      *config.Config     // Client configuration
 }
 
-// ClientOption 定义客户端选项
+// ClientOption defines a function type for configuring the Client
 type ClientOption func(*Client)
 
-// withConfig 设置客户端配置
-func withConfig(cfg *config.Config) ClientOption {
+// WithConfig sets a custom configuration for the client
+func WithConfig(cfg *config.Config) ClientOption {
 	return func(c *Client) {
-		c.config = cfg
+		if cfg != nil {
+			c.config = cfg
+		}
 	}
 }
 
-// NewClient 创建一个新的 Client 实例。
-// 内部自动创建 context，调用方无需显式传递 context
+// NewClient creates a new Client instance with the given app key and options.
+// It validates the app key, applies configuration options, and initializes
+// the HTTP client with proper settings.
+//
+// The client automatically:
+//   - Fetches external configuration from the API
+//   - Updates host configurations
+//   - Retrieves and parses the public key for encryption
+//
+// Parameters:
+//   - appKey: The application key for API authentication (must be 32 characters)
+//   - options: Optional configuration functions to customize the client
+//
+// Returns:
+//   - *Client: A configured client ready for use
+//   - error: Any error that occurred during initialization
 func NewClient(appKey string, options ...ClientOption) (*Client, error) {
-	// 创建一个带有取消功能的 context
+	// Validate the app key first
+	if err := ValidateAppKey(appKey); err != nil {
+		return nil, NewClientError("NewClient", err, "invalid app key provided")
+	}
+
+	// Create a context for the client lifetime
 	ctx, cancel := context.WithCancel(context.Background())
 
-	// 使用默认配置创建客户端
+	// Initialize client with default configuration
 	client := &Client{
 		formEncoder: form.NewEncoder(),
 		appKey:      appKey,
 		ctx:         ctx,
 		ctxCancel:   cancel,
-		config:      config.NewDefaultConfig(), // 默认配置
+		config:      config.NewDefaultConfig(),
 	}
 
-	// 应用选项
+	// Apply any provided options
 	for _, option := range options {
 		option(client)
 	}
 
-	// 创建并配置 HTTP 客户端
+	// Create and configure the HTTP client
 	client.client = resty.New().
-		// 设置Headers
 		SetHeaders(map[string]string{
 			"Content-Type": "application/x-www-form-urlencoded",
 			"User-Agent":   "Mozilla/5.0 BSGameSDK",
 			"cversion":     "1",
 		}).
-		// debug
-		//SetProxy("http://127.0.0.1:8080").
-		// 设置默认超时等
 		SetTimeout(client.config.RequestTimeout)
 
-	err := client.getConfig()
-	if err != nil {
-		return nil, fmt.Errorf("配置失败: %w", err)
+	// Initialize configuration and cryptographic components
+	if err := client.initialize(); err != nil {
+		cancel() // Clean up the context
+		return nil, NewClientError("NewClient", err, "failed to initialize client")
 	}
+
 	return client, nil
 }
 
-func (c *Client) getConfig() error {
+// initialize sets up the client by fetching configuration and cryptographic keys
+func (c *Client) initialize() error {
+	// Fetch external configuration
 	confReq := newExtConfReq(c.config)
 	var confResp extConfResp
 	_, err := c.execReq(c.ctx, confReq, &confResp)
 	if err != nil {
-		return fmt.Errorf("获取外部配置失败: %w", err)
+		return NewClientError("initialize", err, "failed to fetch external configuration")
 	}
+
 	if confResp.ConfigLoginHttps == "" {
-		return fmt.Errorf("获取的登录HTTPS配置为空")
+		return NewClientError("initialize", ErrConfigurationError, "received empty login HTTPS configuration")
 	}
 
 	log.Info("更新登录Hosts")
-	log.Debug(confResp.ConfigLoginHttps)
+	log.Debug("配置登录HTTPS: %s", confResp.ConfigLoginHttps)
 	config.GetHostConfig().UpdateHosts(config.ParseHostsStr(config.HostTypeLoginHttps, confResp.ConfigLoginHttps))
 
+	// Fetch cryptographic cipher
 	cipherReq := newGetCipherV3Req(c.config)
 	var cipherResp getCipherV3Resp
 	_, err = c.execReq(c.ctx, cipherReq, &cipherResp)
 	if err != nil {
-		return fmt.Errorf("获取密钥失败: %w", err)
+		return NewClientError("initialize", err, "failed to fetch cipher key")
 	}
 
+	// Store password hash and parse public key
 	c.pwdHash = cipherResp.Hash
 	c.publicKey, err = parsePublicKeyFromPEM(cipherResp.CipherKey)
 	if err != nil {
-		return fmt.Errorf("解析公钥失败: %w", err)
+		return NewClientError("initialize", err, "failed to parse public key")
 	}
 
 	return nil
 }
 
-// calcSign 计算请求签名
+// calcSign computes the request signature using MD5 hash
 func (c *Client) calcSign(requestBody interface{}) (string, error) {
-	// 请求体编码为map
+	// Encode request body to form values
 	values, err := c.formEncoder.Encode(requestBody)
 	if err != nil {
-		return "", fmt.Errorf("表单编码失败: %w", err)
+		return "", NewClientError("calcSign", err, "failed to encode request body")
 	}
 
-	// 获取所有键并排序
+	// Get and sort all keys
 	keys := make([]string, 0, len(values))
 	for k := range values {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
 
-	// 按排序后的键顺序拼接值
+	// Concatenate values in sorted key order
 	var sb strings.Builder
 	for _, k := range keys {
 		sb.WriteString(values.Get(k))
 	}
 
-	// 拼接AppKey
+	// Append app key
 	sb.WriteString(c.appKey)
 
-	// 计算MD5值作为sign
+	// Calculate MD5 hash as signature
 	sum := md5.Sum([]byte(sb.String()))
 	return hex.EncodeToString(sum[:]), nil
 }
 
-// hashPwd 对密码进行加密
+// hashPwd encrypts the password using RSA public key
 func (c *Client) hashPwd(pwd string) (string, error) {
+	if c.publicKey == nil {
+		return "", NewClientError("hashPwd", ErrConfigurationError, "public key not initialized")
+	}
+	
+	if c.pwdHash == "" {
+		return "", NewClientError("hashPwd", ErrConfigurationError, "password hash not initialized")
+	}
+
 	data, err := encryptPKCS1v15(c.publicKey, []byte(c.pwdHash+pwd))
 	if err != nil {
-		return "", fmt.Errorf("加密密码失败: %w", err)
+		return "", NewClientError("hashPwd", err, "failed to encrypt password")
 	}
+	
 	return base64.StdEncoding.EncodeToString(data), nil
 }
 
-// preReq 准备请求，处理签名和表单数据
+// preReq prepares a request by adding signature and form data
 func (c *Client) preReq(ctx context.Context, requestBody interface{}) (*resty.Request, error) {
-	// 计算签名
+	// Calculate signature
 	sign, err := c.calcSign(requestBody)
 	if err != nil {
-		return nil, fmt.Errorf("计算签名失败: %w", err)
+		return nil, NewClientError("preReq", err, "failed to calculate signature")
 	}
 
-	// 使用form库将请求体编码为表单值
+	// Encode request body as form values
 	values, err := c.formEncoder.Encode(requestBody)
 	if err != nil {
-		return nil, fmt.Errorf("请求体编码失败: %w", err)
+		return nil, NewClientError("preReq", err, "failed to encode request body")
 	}
 
-	// 添加签名
+	// Add signature to form data
 	values.Set("sign", sign)
 
-	// 创建请求
+	// Create and configure request
 	req := c.client.R().
 		SetContext(ctx).
 		SetFormDataFromValues(values)
@@ -174,181 +243,219 @@ func (c *Client) preReq(ctx context.Context, requestBody interface{}) (*resty.Re
 	return req, nil
 }
 
-// execReq
+// execReq executes a prepared request and handles the response
 func (c *Client) execReq(ctx context.Context, request iRequest, result any) (*resty.Response, error) {
 	req, err := c.preReq(ctx, request)
 	if err != nil {
-		log.Error("准备请求失败: %v", err)
-		return nil, err
+		log.Error("Failed to prepare request: %v", err)
+		return nil, NewClientError("execReq", err, "request preparation failed")
 	}
 
 	url, err := request.getUrl()
 	if err != nil {
-		log.Error("获取URL失败: %v", err)
-		return nil, err
+		log.Error("Failed to get URL: %v", err)
+		return nil, NewClientError("execReq", err, "failed to get request URL")
 	}
 
-	log.Debug("发送请求: %s", url.String())
+	log.Debug("Sending request to: %s", url.String())
 
-	// 发送请求并处理结果
+	// Send request and handle response
 	resp, err := req.SetResult(result).Execute(request.getMethod(), url.String())
 	if err != nil {
-		log.Error("请求发送失败: %v", err)
-		return resp, err
+		log.Error("Request failed: %v", err)
+		return resp, NewClientError("execReq", ErrNetworkError, 
+			fmt.Sprintf("request to %s failed: %v", url.String(), err))
 	}
 
-	log.Debug("收到响应: 状态码=%d, 内容长度=%d", resp.StatusCode(), len(resp.Body()))
+	log.Debug("Received response: status=%d, length=%d", resp.StatusCode(), len(resp.Body()))
 
 	if resp.StatusCode() != http.StatusOK {
-		log.Error("请求失败，状态码: %d", resp.StatusCode())
-		return resp, fmt.Errorf("请求失败，状态码: %d", resp.StatusCode())
+		log.Error("Request failed with status code: %d", resp.StatusCode())
+		return resp, NewClientError("execReq", ErrNetworkError, 
+			fmt.Sprintf("request failed with status code: %d", resp.StatusCode()))
 	}
 
 	return resp, nil
 }
 
-// Login 方法实现登录功能，支持验证码处理
-// 使用内部创建的 context，调用方无需显式传递
-func (c *Client) Login(u UserInfo) (*SdkAccount, error) {
-	// 使用内部创建的 context
-	ctx := c.ctx
-	// Hash密码
-	pwdHash, err := c.hashPwd(u.Password)
-	if err != nil {
-		return nil, fmt.Errorf("密码哈希计算失败: %w", err)
+// Login authenticates a user with the provided credentials and handles captcha if required.
+//
+// The login process:
+//  1. Validates the user information
+//  2. Encrypts the password using the public key
+//  3. Attempts initial login
+//  4. Handles captcha verification if required
+//  5. Returns account information on success
+//
+// Parameters:
+//   - user: UserInfo containing username, password, and optional platform/channel info
+//
+// Returns:
+//   - *SdkAccount: Account information including UID and access key
+//   - error: Any error that occurred during the login process
+func (c *Client) Login(user UserInfo) (*SdkAccount, error) {
+	// Validate user input
+	if err := ValidateUserInfo(user); err != nil {
+		return nil, NewClientError("Login", err, "invalid user information")
 	}
 
-	// 构造登录请求
+	// Encrypt the password
+	encryptedPassword, err := c.hashPwd(user.Password)
+	if err != nil {
+		return nil, NewClientError("Login", err, "failed to encrypt password")
+	}
+
+	// Create login request
 	loginReq := newLoginReq(c.config).(*loginReq)
-	loginReq.UserId = u.Username
-	loginReq.Pwd = pwdHash
+	loginReq.UserId = user.Username
+	loginReq.Pwd = encryptedPassword
 
-	// 发起第一次登录请求
+	// Attempt initial login
 	var loginResp loginResp
-	_, err = c.execReq(ctx, loginReq, &loginResp)
-
+	_, err = c.execReq(c.ctx, loginReq, &loginResp)
 	if err != nil {
-		return nil, fmt.Errorf("登录请求错误: %w", err)
+		return nil, NewClientError("Login", err, "login request failed")
 	}
 
-	// 检查是否需要验证码
+	// Check if captcha is required
 	if loginResp.NeedCaptcha != nil && *loginResp.NeedCaptcha == "1" {
-		// 需要验证码，启动验证流程
-		captchaParams, err := c.handleCaptcha(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("验证码处理失败: %w", err)
-		}
-
-		// 构造带验证码的登录请求
-		captLoginReq := newCaptLoginReq(c.config, *captchaParams).(*captLoginReq)
-		captLoginReq.UserId = u.Username
-		captLoginReq.Pwd = pwdHash
-
-		// 发起带验证码的登录请求
-		var captLoginResp captLoginResp
-
-		_, err = c.execReq(ctx, captLoginReq, &captLoginResp)
-
-		if err != nil {
-			return nil, fmt.Errorf("验证码登录请求错误: %w", err)
-		}
-		if captLoginResp.Code.String() != "0" {
-			return nil, fmt.Errorf("验证码登录错误: (%s) %s", captLoginResp.Code.String(), *captLoginResp.Message)
-		}
-
-		// AccessKey（如果有的话）
-		if captLoginResp.AccessKey != nil {
-			return &SdkAccount{
-				AccessKey: *captLoginResp.AccessKey,
-				Uid:       strconv.Itoa(*captLoginResp.Uid),
-				Platform:  u.Platform,
-				Channel:   u.Channel,
-			}, nil
-		} else {
-			return nil, fmt.Errorf("登录错误: (%s) %s", loginResp.Code.String(), *loginResp.Message)
-		}
-	} else
-	// 不需要验证码，直接使用第一次登录的结果
-	if loginResp.Code.String() == "0" && loginResp.AccessKey != nil {
-		return &SdkAccount{
-			AccessKey: *loginResp.AccessKey,
-			Uid:       strconv.Itoa(*loginResp.Uid),
-			Platform:  u.Platform,
-			Channel:   u.Channel,
-		}, nil
-	} else {
-		return nil, fmt.Errorf("登录错误: (%s) %s", loginResp.Code.String(), *loginResp.Message)
+		return c.handleCaptchaLogin(user, encryptedPassword)
 	}
 
+	// Process normal login response
+	return c.processLoginResponse(&loginResp, user, "Login")
 }
 
+// handleCaptchaLogin handles the captcha verification and login process
+func (c *Client) handleCaptchaLogin(user UserInfo, encryptedPassword string) (*SdkAccount, error) {
+	// Get captcha parameters
+	captchaParams, err := c.handleCaptcha(c.ctx)
+	if err != nil {
+		return nil, NewClientError("handleCaptchaLogin", err, "captcha verification failed")
+	}
+
+	// Create captcha login request
+	captLoginReq := newCaptLoginReq(c.config, *captchaParams).(*captLoginReq)
+	captLoginReq.UserId = user.Username
+	captLoginReq.Pwd = encryptedPassword
+
+	// Execute captcha login request
+	var captLoginResp captLoginResp
+	_, err = c.execReq(c.ctx, captLoginReq, &captLoginResp)
+	if err != nil {
+		return nil, NewClientError("handleCaptchaLogin", err, "captcha login request failed")
+	}
+
+	// Process captcha login response
+	return c.processLoginResponse(&captLoginResp.loginResp, user, "handleCaptchaLogin")
+}
+
+// processLoginResponse processes the login response and creates SdkAccount
+func (c *Client) processLoginResponse(resp *loginResp, user UserInfo, operation string) (*SdkAccount, error) {
+	if resp.Code == nil {
+		return nil, NewClientError(operation, ErrAPIError, "missing response code")
+	}
+
+	// Check for successful login (code "0")
+	if resp.Code.String() == "0" {
+		if resp.AccessKey == nil {
+			return nil, NewClientError(operation, ErrAPIError, "missing access key in successful response")
+		}
+		if resp.Uid == nil {
+			return nil, NewClientError(operation, ErrAPIError, "missing UID in successful response")
+		}
+
+		return &SdkAccount{
+			AccessKey: *resp.AccessKey,
+			Uid:       strconv.Itoa(*resp.Uid),
+			Platform:  user.Platform,
+			Channel:   user.Channel,
+		}, nil
+	}
+
+	// Handle error responses
+	message := "unknown error"
+	if resp.Message != nil {
+		message = *resp.Message
+	}
+
+	// Create specific error based on response code
+	apiErr := NewAPIError(operation, resp.Code.String(), message)
+	
+	// Map common error codes to specific error types
+	switch resp.Code.String() {
+	case "-629", "-626": // Common invalid credential codes
+		return nil, NewClientError(operation, ErrInvalidCredentials, apiErr.Error())
+	default:
+		return nil, NewClientError(operation, ErrAuthenticationFailed, apiErr.Error())
+	}
+}
+// handleCaptcha manages the captcha verification process
 func (c *Client) handleCaptcha(ctx context.Context) (*captchaParams, error) {
-	// 请求验证码参数
+	// Request captcha parameters
 	captchaReq := newStartCaptchaReq(c.config)
 
-	// 准备请求，处理签名和表单数据
+	// Prepare and send captcha request
 	req, err := c.preReq(ctx, captchaReq)
 	if err != nil {
-		return nil, fmt.Errorf("准备验证码请求失败: %w", err)
+		return nil, NewClientError("handleCaptcha", err, "failed to prepare captcha request")
 	}
 
 	url, err := captchaReq.getUrl()
 	if err != nil {
-		return nil, fmt.Errorf("获取验证码URL失败: %w", err)
+		return nil, NewClientError("handleCaptcha", err, "failed to get captcha URL")
 	}
 
 	var captchaResp startCaptchaResp
-	resp, err := req.
-		SetResult(&captchaResp).
-		Post(url.String())
-
+	resp, err := req.SetResult(&captchaResp).Post(url.String())
 	if err != nil {
-		return nil, fmt.Errorf("发送验证码请求失败: %w", err)
+		return nil, NewClientError("handleCaptcha", err, "failed to send captcha request")
 	}
 
-	// 检查HTTP状态码
+	// Check HTTP status
 	if resp.StatusCode() != http.StatusOK {
-		return nil, fmt.Errorf("验证码请求返回非成功状态码: %d", resp.StatusCode())
+		return nil, NewClientError("handleCaptcha", ErrNetworkError, 
+			fmt.Sprintf("captcha request returned status code: %d", resp.StatusCode()))
 	}
 
-	// 验证码验证逻辑，暂时仅使用远程验证器
-	ret, err := NewRemoteValidator().Validate()
+	// Perform remote validation
+	validator := NewRemoteValidator()
+	validationResult, err := validator.Validate()
 	if err != nil {
-		return nil, fmt.Errorf("远程验证码校验失败: %w", err)
+		return nil, NewClientError("handleCaptcha", ErrCaptchaFailed, 
+			fmt.Sprintf("remote captcha validation failed: %v", err))
 	}
 
-	// 构造验证码参数
-	captchaParams := captchaParams{
+	// Construct captcha parameters
+	return &captchaParams{
 		CaptchaType: "1",
-		Validate:    ret.Validate,
-		Challenge:   ret.Challenge,
-		GtUserId:    ret.GtUserId,
-		SecCode:     ret.Validate + "|jordan",
-		CToken:      ret.GtUserId,
-	}
-
-	return &captchaParams, nil
+		Validate:    validationResult.Validate,
+		Challenge:   validationResult.Challenge,
+		GtUserId:    validationResult.GtUserId,
+		SecCode:     validationResult.Validate + "|jordan",
+		CToken:      validationResult.GtUserId,
+	}, nil
 }
 
-// startCaptcha 方法获取验证码信息
+// startCaptcha retrieves captcha information (currently unused but kept for compatibility)
 func (c *Client) startCaptcha(ctx context.Context) (*startCaptchaResp, error) {
-	// 构造请求体
 	captchaReq := newStartCaptchaReq(c.config)
 
 	var result startCaptchaResp
-	// 发起 POST 请求
 	_, err := c.execReq(ctx, captchaReq, &result)
-
 	if err != nil {
-		return nil, fmt.Errorf("获取验证码请求错误: %w", err)
+		return nil, NewClientError("startCaptcha", err, "failed to get captcha information")
 	}
 
 	return &result, nil
 }
 
-// Close 关闭客户端并取消所有未完成的请求
+// Close gracefully shuts down the client and cancels all pending requests.
+// It should be called when the client is no longer needed to free resources.
 func (c *Client) Close() {
 	if c.ctxCancel != nil {
+		log.Debug("Closing client and canceling pending requests")
 		c.ctxCancel()
+		c.ctxCancel = nil // Prevent double-close
 	}
 }

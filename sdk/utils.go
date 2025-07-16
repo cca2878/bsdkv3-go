@@ -1,3 +1,9 @@
+// Package bsdkv3 provides cryptographic utilities for the BSdk V3 client.
+//
+// This file contains utilities for:
+//   - RSA public key parsing from PEM format
+//   - PKCS#1 v1.5 encryption
+//   - Password encryption with public key
 package bsdkv3
 
 import (

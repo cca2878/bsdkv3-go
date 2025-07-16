@@ -4,7 +4,6 @@ import (
 	"bsdkv3-go/sdk"
 	"bsdkv3-go/sdk/config"
 	"bsdkv3-go/sdk/log"
-	"fmt"
 )
 
 func testValidator() {
@@ -16,11 +15,11 @@ func testValidator() {
 		return
 	}
 	// 直接使用结构化的结果
-	fmt.Printf("验证成功！\n")
-	fmt.Printf("Challenge: %s\n", ret.Challenge)
-	fmt.Printf("Gt: %s\n", ret.Gt)
-	fmt.Printf("GtUserId: %s\n", ret.GtUserId)
-	fmt.Printf("Validate: %s\n", ret.Validate)
+	log.Info("验证成功！")
+	log.Info("Challenge: %s", ret.Challenge)
+	log.Info("Gt: %s", ret.Gt)
+	log.Info("GtUserId: %s", ret.GtUserId)
+	log.Info("Validate: %s", ret.Validate)
 }
 
 func testLogin() {
@@ -42,7 +41,7 @@ func testLogin() {
 		return
 	}
 	log.Info("登录成功！")
-	log.Info(fmt.Sprint(ret))
+	log.Info("登录结果: %v", ret)
 	client.Close()
 }
 
