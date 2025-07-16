@@ -120,9 +120,9 @@ func NewClient(appKey string, options ...ClientOption) (*Client, error) {
 	// Create and configure the HTTP client
 	client.client = resty.New().
 		SetHeaders(map[string]string{
-			"Content-Type": "application/x-www-form-urlencoded",
-			"User-Agent":   "Mozilla/5.0 BSGameSDK",
-			"cversion":     "1",
+			"Content-Type": ContentTypeForm,
+			"User-Agent":   DefaultUserAgent,
+			"cversion":     DefaultCVersion,
 		}).
 		SetTimeout(client.config.RequestTimeout)
 
@@ -205,7 +205,7 @@ func (c *Client) hashPwd(pwd string) (string, error) {
 	if c.publicKey == nil {
 		return "", NewClientError("hashPwd", ErrConfigurationError, "public key not initialized")
 	}
-	
+
 	if c.pwdHash == "" {
 		return "", NewClientError("hashPwd", ErrConfigurationError, "password hash not initialized")
 	}
@@ -214,7 +214,7 @@ func (c *Client) hashPwd(pwd string) (string, error) {
 	if err != nil {
 		return "", NewClientError("hashPwd", err, "failed to encrypt password")
 	}
-	
+
 	return base64.StdEncoding.EncodeToString(data), nil
 }
 
@@ -263,7 +263,7 @@ func (c *Client) execReq(ctx context.Context, request iRequest, result any) (*re
 	resp, err := req.SetResult(result).Execute(request.getMethod(), url.String())
 	if err != nil {
 		log.Error("Request failed: %v", err)
-		return resp, NewClientError("execReq", ErrNetworkError, 
+		return resp, NewClientError("execReq", ErrNetworkError,
 			fmt.Sprintf("request to %s failed: %v", url.String(), err))
 	}
 
@@ -271,7 +271,7 @@ func (c *Client) execReq(ctx context.Context, request iRequest, result any) (*re
 
 	if resp.StatusCode() != http.StatusOK {
 		log.Error("Request failed with status code: %d", resp.StatusCode())
-		return resp, NewClientError("execReq", ErrNetworkError, 
+		return resp, NewClientError("execReq", ErrNetworkError,
 			fmt.Sprintf("request failed with status code: %d", resp.StatusCode()))
 	}
 
@@ -318,7 +318,7 @@ func (c *Client) Login(user UserInfo) (*SdkAccount, error) {
 	}
 
 	// Check if captcha is required
-	if loginResp.NeedCaptcha != nil && *loginResp.NeedCaptcha == "1" {
+	if loginResp.NeedCaptcha != nil && *loginResp.NeedCaptcha == CaptchaRequiredCode {
 		return c.handleCaptchaLogin(user, encryptedPassword)
 	}
 
@@ -357,7 +357,7 @@ func (c *Client) processLoginResponse(resp *loginResp, user UserInfo, operation 
 	}
 
 	// Check for successful login (code "0")
-	if resp.Code.String() == "0" {
+	if resp.Code.String() == SuccessCode {
 		if resp.AccessKey == nil {
 			return nil, NewClientError(operation, ErrAPIError, "missing access key in successful response")
 		}
@@ -381,15 +381,16 @@ func (c *Client) processLoginResponse(resp *loginResp, user UserInfo, operation 
 
 	// Create specific error based on response code
 	apiErr := NewAPIError(operation, resp.Code.String(), message)
-	
+
 	// Map common error codes to specific error types
 	switch resp.Code.String() {
-	case "-629", "-626": // Common invalid credential codes
+	case ErrCodeInvalidCredentials1, ErrCodeInvalidCredentials2:
 		return nil, NewClientError(operation, ErrInvalidCredentials, apiErr.Error())
 	default:
 		return nil, NewClientError(operation, ErrAuthenticationFailed, apiErr.Error())
 	}
 }
+
 // handleCaptcha manages the captcha verification process
 func (c *Client) handleCaptcha(ctx context.Context) (*captchaParams, error) {
 	// Request captcha parameters
@@ -414,7 +415,7 @@ func (c *Client) handleCaptcha(ctx context.Context) (*captchaParams, error) {
 
 	// Check HTTP status
 	if resp.StatusCode() != http.StatusOK {
-		return nil, NewClientError("handleCaptcha", ErrNetworkError, 
+		return nil, NewClientError("handleCaptcha", ErrNetworkError,
 			fmt.Sprintf("captcha request returned status code: %d", resp.StatusCode()))
 	}
 
@@ -422,7 +423,7 @@ func (c *Client) handleCaptcha(ctx context.Context) (*captchaParams, error) {
 	validator := NewRemoteValidator()
 	validationResult, err := validator.Validate()
 	if err != nil {
-		return nil, NewClientError("handleCaptcha", ErrCaptchaFailed, 
+		return nil, NewClientError("handleCaptcha", ErrCaptchaFailed,
 			fmt.Sprintf("remote captcha validation failed: %v", err))
 	}
 

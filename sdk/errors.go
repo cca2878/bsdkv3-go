@@ -10,19 +10,19 @@ import "fmt"
 var (
 	// ErrInvalidCredentials indicates that the provided username/password combination is invalid
 	ErrInvalidCredentials = fmt.Errorf("invalid credentials")
-	
+
 	// ErrCaptchaFailed indicates that captcha validation failed
 	ErrCaptchaFailed = fmt.Errorf("captcha validation failed")
-	
+
 	// ErrNetworkError indicates a network-related failure
 	ErrNetworkError = fmt.Errorf("network error")
-	
+
 	// ErrConfigurationError indicates a client configuration error
 	ErrConfigurationError = fmt.Errorf("configuration error")
-	
+
 	// ErrAPIError indicates an API-level error from the server
 	ErrAPIError = fmt.Errorf("API error")
-	
+
 	// ErrAuthenticationFailed indicates general authentication failure
 	ErrAuthenticationFailed = fmt.Errorf("authentication failed")
 )

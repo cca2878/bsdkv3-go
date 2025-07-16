@@ -44,6 +44,10 @@ func parsePublicKeyFromPEM(keyPEMString string) (*rsa.PublicKey, error) {
 
 // encryptPKCS1v15 encrypts data using RSA PKCS#1 v1.5 padding.
 func encryptPKCS1v15(publicKey *rsa.PublicKey, plaintext []byte) ([]byte, error) {
+	if publicKey == nil {
+		return nil, fmt.Errorf("public key cannot be nil")
+	}
+
 	// rand.Reader is required for PKCS#1 v1.5 padding encryption
 	ciphertext, err := rsa.EncryptPKCS1v15(rand.Reader, publicKey, plaintext)
 	if err != nil {

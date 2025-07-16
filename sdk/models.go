@@ -61,38 +61,38 @@ type baseRequest struct {
 	config *config.Config // Associated configuration
 
 	// Device and SDK Information
-	CurBuvid          string `form:"cur_buvid"`           // Current browser/device unique ID
-	OldBuvid          string `form:"old_buvid"`           // Previous browser/device unique ID  
-	UdId              string `form:"udid"`                // Unique device identifier
-	BdId              string `form:"bd_id"`               // Board/device identifier
-	SdkType           string `form:"sdk_type"`            // SDK type identifier
-	VersionCode       string `form:"version_code"`        // Application version code
-	SdkVer            string `form:"sdk_ver"`             // SDK version
-	AppVer            string `form:"app_ver"`             // Application version
-	
-	// Application Information  
-	MerchantId        string `form:"merchant_id"`         // Merchant identifier
-	ServerId          string `form:"server_id"`           // Server identifier
-	AppId             string `form:"app_id"`              // Application identifier
-	GameId            string `form:"game_id"`             // Game identifier
-	
+	CurBuvid    string `form:"cur_buvid"`    // Current browser/device unique ID
+	OldBuvid    string `form:"old_buvid"`    // Previous browser/device unique ID
+	UdId        string `form:"udid"`         // Unique device identifier
+	BdId        string `form:"bd_id"`        // Board/device identifier
+	SdkType     string `form:"sdk_type"`     // SDK type identifier
+	VersionCode string `form:"version_code"` // Application version code
+	SdkVer      string `form:"sdk_ver"`      // SDK version
+	AppVer      string `form:"app_ver"`      // Application version
+
+	// Application Information
+	MerchantId string `form:"merchant_id"` // Merchant identifier
+	ServerId   string `form:"server_id"`   // Server identifier
+	AppId      string `form:"app_id"`      // Application identifier
+	GameId     string `form:"game_id"`     // Game identifier
+
 	// Platform and Environment
-	Platform          string `form:"platform"`            // Platform identifier
-	PlatformType      string `form:"platform_type"`       // Platform type
-	ChannelId         string `form:"channel_id"`          // Channel identifier
-	CurrentEnv        string `form:"current_env"`         // Current environment
-	
+	Platform     string `form:"platform"`      // Platform identifier
+	PlatformType string `form:"platform_type"` // Platform type
+	ChannelId    string `form:"channel_id"`    // Channel identifier
+	CurrentEnv   string `form:"current_env"`   // Current environment
+
 	// Request Metadata
 	Version           string `form:"version"`             // API version
 	Timestamp         string `form:"timestamp"`           // Request timestamp
 	DomainSwitchCount string `form:"domain_switch_count"` // Domain switch count
 	Domain            string `form:"domain"`              // Request domain
 	OriginalDomain    string `form:"original_domain"`     // Original domain
-	
+
 	// Security and Signing
-	ApkSign           string `form:"apk_sign"`            // APK signature
-	SdkLogType        string `form:"sdk_log_type"`        // SDK log type
-	Sign              string `form:"sign"`                // Request signature (added by client)
+	ApkSign    string `form:"apk_sign"`     // APK signature
+	SdkLogType string `form:"sdk_log_type"` // SDK log type
+	Sign       string `form:"sign"`         // Request signature (added by client)
 }
 
 // setConfig associates a configuration with this request
@@ -168,7 +168,7 @@ func parseModelUrl(hostType config.HostType, path string) (*url.URL, error) {
 }
 
 // External Configuration API
-// 
+//
 // The external configuration API retrieves host configuration and other
 // settings required for proper SDK operation.
 
@@ -291,14 +291,14 @@ type loginResp struct {
 	Code *json.Number `json:"code"` // Response code (0 = success)
 
 	// Login result fields
-	NeedCaptcha      *string `json:"need_captch"`        // Whether captcha is required ("1" = yes)
-	Nonce            *string `json:"nonce"`              // Security nonce
-	AccessKey        *string `json:"access_key"`         // Access token for authenticated requests
-	Expires          *int    `json:"expires"`            // Token expiration time
-	RealnameVerified *int    `json:"realname_verified"`  // Real name verification status
-	Uid              *int    `json:"uid"`                // User ID
-	Uname            *string `json:"uname"`              // Username
-	Message          *string `json:"message"`            // Error or status message
+	NeedCaptcha      *string `json:"need_captch"`       // Whether captcha is required ("1" = yes)
+	Nonce            *string `json:"nonce"`             // Security nonce
+	AccessKey        *string `json:"access_key"`        // Access token for authenticated requests
+	Expires          *int    `json:"expires"`           // Token expiration time
+	RealnameVerified *int    `json:"realname_verified"` // Real name verification status
+	Uid              *int    `json:"uid"`               // User ID
+	Uname            *string `json:"uname"`             // Username
+	Message          *string `json:"message"`           // Error or status message
 }
 
 // Captcha-Protected Login API
