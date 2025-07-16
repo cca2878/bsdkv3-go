@@ -30,10 +30,3 @@ const (
 	// CaptchaRequiredCode indicates captcha verification is required
 	CaptchaRequiredCode = "1"
 )
-
-// Common API error codes
-const (
-	// ErrCodeInvalidCredentials indicates invalid username/password
-	ErrCodeInvalidCredentials1 = "-629"
-	ErrCodeInvalidCredentials2 = "-626"
-)

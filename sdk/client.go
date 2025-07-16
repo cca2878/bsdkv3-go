@@ -56,14 +56,14 @@ import (
 //   - Automatic host configuration updates
 //   - Context management for request cancellation
 type Client struct {
-	client      *resty.Client      // HTTP client for making requests
-	formEncoder *form.Encoder      // Form encoder for request bodies
-	publicKey   *rsa.PublicKey     // RSA public key for password encryption
-	pwdHash     string             // Password hash salt from server
-	appKey      string             // Application key for API authentication
-	ctx         context.Context    // Client context for request lifecycle
-	ctxCancel   context.CancelFunc // Function to cancel client context
-	config      *config.Config     // Client configuration
+	client       *resty.Client      // HTTP client for making requests
+	formEncoder  *form.Encoder      // Form encoder for request bodies
+	publicKey    *rsa.PublicKey     // RSA public key for password encryption
+	passwordSalt string             // Password salt from server
+	appKey       string             // Application key for API authentication
+	ctx          context.Context    // Client context for request lifecycle
+	ctxCancel    context.CancelFunc // Function to cancel client context
+	config       *config.Config     // Client configuration
 }
 
 // ClientOption defines a function type for configuring the Client
@@ -149,8 +149,8 @@ func (c *Client) initialize() error {
 		return NewClientError("initialize", ErrConfigurationError, "received empty login HTTPS configuration")
 	}
 
-	log.Info("更新登录Hosts")
-	log.Debug("配置登录HTTPS: %s", confResp.ConfigLoginHttps)
+	log.Info("Updating login hosts")
+	log.Debug("Login HTTPS configuration: %s", confResp.ConfigLoginHttps)
 	config.GetHostConfig().UpdateHosts(config.ParseHostsStr(config.HostTypeLoginHttps, confResp.ConfigLoginHttps))
 
 	// Fetch cryptographic cipher
@@ -162,7 +162,7 @@ func (c *Client) initialize() error {
 	}
 
 	// Store password hash and parse public key
-	c.pwdHash = cipherResp.Hash
+	c.passwordSalt = cipherResp.Hash
 	c.publicKey, err = parsePublicKeyFromPEM(cipherResp.CipherKey)
 	if err != nil {
 		return NewClientError("initialize", err, "failed to parse public key")
@@ -206,11 +206,11 @@ func (c *Client) hashPwd(pwd string) (string, error) {
 		return "", NewClientError("hashPwd", ErrConfigurationError, "public key not initialized")
 	}
 
-	if c.pwdHash == "" {
+	if c.passwordSalt == "" {
 		return "", NewClientError("hashPwd", ErrConfigurationError, "password hash not initialized")
 	}
 
-	data, err := encryptPKCS1v15(c.publicKey, []byte(c.pwdHash+pwd))
+	data, err := encryptPKCS1v15(c.publicKey, []byte(c.passwordSalt+pwd))
 	if err != nil {
 		return "", NewClientError("hashPwd", err, "failed to encrypt password")
 	}
@@ -382,13 +382,8 @@ func (c *Client) processLoginResponse(resp *loginResp, user UserInfo, operation 
 	// Create specific error based on response code
 	apiErr := NewAPIError(operation, resp.Code.String(), message)
 
-	// Map common error codes to specific error types
-	switch resp.Code.String() {
-	case ErrCodeInvalidCredentials1, ErrCodeInvalidCredentials2:
-		return nil, NewClientError(operation, ErrInvalidCredentials, apiErr.Error())
-	default:
-		return nil, NewClientError(operation, ErrAuthenticationFailed, apiErr.Error())
-	}
+	// All authentication failures are treated as client errors
+	return nil, NewClientError(operation, ErrAuthenticationFailed, apiErr.Error())
 }
 
 // handleCaptcha manages the captcha verification process
