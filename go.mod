@@ -1,10 +1,10 @@
-module bsdkv3-go
+module github.com/cca2878/bsdkv3-go
 
-go 1.24
+go 1.25.0
 
 require (
-	github.com/go-playground/form/v4 v4.2.1
-	github.com/go-resty/resty/v2 v2.16.5
+	github.com/go-playground/form/v4 v4.3.0
+	resty.dev/v3 v3.0.0-beta.6
 )
 
-require golang.org/x/net v0.39.0 // indirect
+require golang.org/x/net v0.54.0 // indirect
