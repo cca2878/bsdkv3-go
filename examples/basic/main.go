@@ -10,8 +10,8 @@ import (
 )
 
 func testLoginR() {
-	// 创建日志记录器，0 对应 debug 级别
-	logger := bsdkv3.NewStdLogger(os.Stdout, 0)
+	// 创建日志记录器，使用导出的 LogLevelDebug 级别
+	logger := bsdkv3.NewStdLogger(os.Stdout, bsdkv3.LogLevelDebug)
 
 	user := bsdkv3.UserInfo{
 		Username: "example_user",

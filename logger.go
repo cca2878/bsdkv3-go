@@ -26,38 +26,41 @@ func (nopLogger) Error(string, ...any) {}
 // stdLogger 将日志写入指定 Writer（通常为 os.Stderr），供需要默认输出的场景使用。
 type stdLogger struct {
 	w     io.Writer
-	level int
+	level LogLevel
 }
 
+// LogLevel 定义了日志输出级别。
+type LogLevel int
+
 const (
-	levelDebug = iota
-	levelInfo
-	levelWarn
-	levelError
+	LogLevelDebug LogLevel = iota
+	LogLevelInfo
+	LogLevelWarn
+	LogLevelError
 )
 
 // NewStdLogger 创建写入 w 的标准格式日志器，level 为最低输出级别。
-func NewStdLogger(w io.Writer, level int) Logger {
+func NewStdLogger(w io.Writer, level LogLevel) Logger {
 	if w == nil {
 		w = os.Stderr
 	}
-	if level < levelDebug {
-		level = levelDebug
+	if level < LogLevelDebug {
+		level = LogLevelDebug
 	}
-	if level > levelError {
-		level = levelError
+	if level > LogLevelError {
+		level = LogLevelError
 	}
 	return &stdLogger{w: w, level: level}
 }
 
-var levelNames = map[int]string{
-	levelDebug: "DEBUG",
-	levelInfo:  "INFO",
-	levelWarn:  "WARN",
-	levelError: "ERROR",
+var levelNames = map[LogLevel]string{
+	LogLevelDebug: "DEBUG",
+	LogLevelInfo:  "INFO",
+	LogLevelWarn:  "WARN",
+	LogLevelError: "ERROR",
 }
 
-func (l *stdLogger) log(lvl int, format string, args ...any) {
+func (l *stdLogger) log(lvl LogLevel, format string, args ...any) {
 	if lvl < l.level {
 		return
 	}
@@ -69,10 +72,10 @@ func (l *stdLogger) log(lvl int, format string, args ...any) {
 	_, _ = fmt.Fprintln(l.w, prefix+fmt.Sprintf(format, args...))
 }
 
-func (l *stdLogger) Debug(format string, args ...any) { l.log(levelDebug, format, args...) }
-func (l *stdLogger) Info(format string, args ...any)  { l.log(levelInfo, format, args...) }
-func (l *stdLogger) Warn(format string, args ...any)  { l.log(levelWarn, format, args...) }
-func (l *stdLogger) Error(format string, args ...any) { l.log(levelError, format, args...) }
+func (l *stdLogger) Debug(format string, args ...any) { l.log(LogLevelDebug, format, args...) }
+func (l *stdLogger) Info(format string, args ...any)  { l.log(LogLevelInfo, format, args...) }
+func (l *stdLogger) Warn(format string, args ...any)  { l.log(LogLevelWarn, format, args...) }
+func (l *stdLogger) Error(format string, args ...any) { l.log(LogLevelError, format, args...) }
 
 // discardLogger 供未注入 Logger 时使用。
 var discardLogger Logger = nopLogger{}

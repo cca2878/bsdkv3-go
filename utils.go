@@ -12,6 +12,8 @@ type option[T any] interface {
 type optionFunc[T any] func(*T)
 
 // 3. 实现接口
+//
+//nolint:unused // 泛型类型的方法在满足接口时可能会被 unused 误报
 func (f optionFunc[T]) apply(i *T) {
 	f(i)
 }

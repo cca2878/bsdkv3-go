@@ -28,17 +28,22 @@ func (c *Client) calcSign(values url.Values) (string, error) {
 
 	h := md5.New()
 	for _, k := range keys {
-		io.WriteString(h, values.Get(k))
+		_, _ = io.WriteString(h, values.Get(k))
 	}
-	io.WriteString(h, c.appKey)
+	_, _ = io.WriteString(h, c.appKey)
 
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-func (c *Client) preReq(ctx context.Context, reqBody any) (*resty.Request, error) {
+func (c *Client) preReq(ctx context.Context, reqBody any, domain string) (*resty.Request, error) {
 	values, err := c.formEncoder.Encode(reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("请求体编码失败: %w", err)
+	}
+
+	if domain != "" {
+		values.Set("domain", domain)
+		values.Set("original_domain", domain)
 	}
 
 	if values.Get("timestamp") == "" {
@@ -58,34 +63,6 @@ func (c *Client) preReq(ctx context.Context, reqBody any) (*resty.Request, error
 }
 
 func (c *Client) execReq(ctx context.Context, method, path string, reqBody any, respBody any) (*resty.Response, error) {
-	// requ, err := c.preReq(ctx, reqBody)
-	// if err != nil {
-	// 	c.logger.Error("准备请求失败: %v", err)
-	// 	return nil, err
-	// }
-
-	// url, err := req.URL(c.hosts)
-	// if err != nil {
-	// 	c.logger.Error("获取URL失败: %v", err)
-	// 	return nil, err
-	// }
-
-	// c.logger.Debug("发送请求: %s", url.String())
-
-	// resp, err := requ.SetResult(result).Execute(req.Method(), url.String())
-	// if err != nil {
-	// 	c.logger.Error("请求发送失败: %v", err)
-	// 	return resp, err
-	// }
-
-	// c.logger.Debug("收到响应: 状态码=%d, 内容长度=%d", resp.StatusCode(), len(resp.Body()))
-
-	// if resp.StatusCode() != http.StatusOK {
-	// 	c.logger.Error("请求失败，状态码: %d", resp.StatusCode())
-	// 	return resp, fmt.Errorf("请求失败，状态码: %d", resp.StatusCode())
-	// }
-
-	// return resp, nil
 	var lastErr error
 
 	for i := 0; i < c.clientConf.TryTimes; i++ {
@@ -105,7 +82,7 @@ func (c *Client) execReq(ctx context.Context, method, path string, reqBody any, 
 		}
 
 		// preReq 内部去计算签名、处理表单
-		req, err := c.preReq(ctx, reqBody)
+		req, err := c.preReq(ctx, reqBody, targetURL.Hostname())
 		if err != nil {
 			return nil, err
 		}
@@ -122,6 +99,10 @@ func (c *Client) execReq(ctx context.Context, method, path string, reqBody any, 
 				lastErr = fmt.Errorf("请求失败，状态码: %d", resp.StatusCode())
 			}
 			continue
+		}
+
+		if resp.StatusCode() >= 400 {
+			return resp, fmt.Errorf("请求失败，状态码: %d", resp.StatusCode())
 		}
 
 		return resp, nil

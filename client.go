@@ -72,6 +72,10 @@ func NewClient(ctx context.Context, appKey string, options ...option[optionsBuil
 		opt.apply(builder)
 	}
 
+	if builder.logger == nil {
+		builder.logger = discardLogger
+	}
+
 	client := &Client{
 		clientConf: builder.clientConf,
 		hostMgr:    newHostManager([]string{defaultLoginHttpsHost}),

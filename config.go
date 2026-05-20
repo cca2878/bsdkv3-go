@@ -102,7 +102,7 @@ func NewReqConf(options ...option[reqConf]) reqConf {
 
 // Client配置选项
 
-// WithClientConf 设置 Client 配置
+// WithConfigClient 设置 Client 配置
 func WithConfigClient(conf clientConf) option[clientConf] {
 	return optionFunc[clientConf](func(c *clientConf) {
 		*c = conf
@@ -116,6 +116,7 @@ func WithConfigClientReqTimeout(timeout time.Duration) option[clientConf] {
 	})
 }
 
+// WithConfigClientReqTryTimes 设置请求重试次数
 func WithConfigClientReqTryTimes(tryTimes int) option[clientConf] {
 	return optionFunc[clientConf](func(c *clientConf) {
 		c.TryTimes = tryTimes
@@ -124,63 +125,63 @@ func WithConfigClientReqTryTimes(tryTimes int) option[clientConf] {
 
 // 请求配置选项
 
-// WithReqConf 设置请求配置
+// WithConfigReqConf 设置请求配置
 func WithConfigReqConf(conf reqConf) option[reqConf] {
 	return optionFunc[reqConf](func(c *reqConf) {
 		*c = conf
 	})
 }
 
-// WithAppVer 设置 AppVer
+// WithConfigReqAppVer 设置 AppVer
 func WithConfigReqAppVer(appVer string) option[reqConf] {
 	return optionFunc[reqConf](func(c *reqConf) {
 		c.AppVer = appVer
 	})
 }
 
-// WithSdkVer 设置 SdkVer
+// WithConfigReqSdkVer 设置 SdkVer
 func WithConfigReqSdkVer(sdkVer string) option[reqConf] {
 	return optionFunc[reqConf](func(c *reqConf) {
 		c.SdkVer = sdkVer
 	})
 }
 
-// WithCurrentEnv 设置 CurrentEnv
+// WithConfigReqCurrentEnv 设置 CurrentEnv
 func WithConfigReqCurrentEnv(currentEnv string) option[reqConf] {
 	return optionFunc[reqConf](func(c *reqConf) {
 		c.CurrentEnv = currentEnv
 	})
 }
 
-// WithSdkLogType 设置 SdkLogType
+// WithConfigReqSdkLogType 设置 SdkLogType
 func WithConfigReqSdkLogType(sdkLogType string) option[reqConf] {
 	return optionFunc[reqConf](func(c *reqConf) {
 		c.SdkLogType = sdkLogType
 	})
 }
 
-// WithAppId 设置 AppId
+// WithConfigReqAppId 设置 AppId
 func WithConfigReqAppId(appId string) option[reqConf] {
 	return optionFunc[reqConf](func(c *reqConf) {
 		c.AppId = appId
 	})
 }
 
-// WithPlatform 设置 Platform
+// WithConfigReqPlatform 设置 Platform
 func WithConfigReqPlatform(platform string) option[reqConf] {
 	return optionFunc[reqConf](func(c *reqConf) {
 		c.Platform = platform
 	})
 }
 
-// WithChannelId 设置 ChannelId
+// WithConfigReqChannelId 设置 ChannelId
 func WithConfigReqChannelId(channelId string) option[reqConf] {
 	return optionFunc[reqConf](func(c *reqConf) {
 		c.ChannelId = channelId
 	})
 }
 
-// WithGameId 设置 GameId
+// WithConfigReqGameId 设置 GameId
 func WithConfigReqGameId(gameId string) option[reqConf] {
 	return optionFunc[reqConf](func(c *reqConf) {
 		c.GameId = gameId

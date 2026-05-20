@@ -43,7 +43,7 @@ const (
 
 	defaultTryTimes = 5
 
-	// 远程验证服务队列轮询阈值（与既有行为一致）
+	// 远程验证服务队列轮询阈值
 	maxAcceptableQueueLength = 35
 	maxQueueWaitSlots        = 3
 	queueSlotWaitSeconds     = 5
@@ -66,17 +66,18 @@ func withValidatorLogger(logger Logger) option[remoteValidatorOptions] {
 	})
 }
 
-func withValidatorTryTimes(times int) option[remoteValidatorOptions] {
-	return optionFunc[remoteValidatorOptions](func(o *remoteValidatorOptions) {
-		o.tryTimes = times
-	})
-}
+// 保留备用
+// func withValidatorTryTimes(times int) option[remoteValidatorOptions] {
+// 	return optionFunc[remoteValidatorOptions](func(o *remoteValidatorOptions) {
+// 		o.tryTimes = times
+// 	})
+// }
 
-func withValidatorPollInterval(interval time.Duration) option[remoteValidatorOptions] {
-	return optionFunc[remoteValidatorOptions](func(o *remoteValidatorOptions) {
-		o.pollInterval = interval
-	})
-}
+// func withValidatorPollInterval(interval time.Duration) option[remoteValidatorOptions] {
+// 	return optionFunc[remoteValidatorOptions](func(o *remoteValidatorOptions) {
+// 		o.pollInterval = interval
+// 	})
+// }
 
 func newRemoteValidator(httpClient *resty.Client, opts ...option[remoteValidatorOptions]) Validator {
 	// 默认配置
@@ -182,16 +183,24 @@ func (r *remoteValidator) pollValidationStatus(ctx context.Context, uuid string)
 
 		switch v := info.(type) {
 		case string:
-			if v == "in running" {
-				// 使用可配置的轮询间隔
+			switch v {
+			case "fail", "url invalid":
+				r.logger.Error("验证失败: %s", v)
+				return nil, fmt.Errorf("captcha failed: %s", v)
+			case "in running":
+				if err := sleepContext(ctx, r.pollInterval); err != nil {
+					r.logger.Error("等待验证状态时发生错误: %v", err)
+					return nil, fmt.Errorf("等待验证状态失败: %w", err)
+				}
+				continue
+			default:
+				r.logger.Warn("未知的验证状态: %s，继续等待...", v)
 				if err := sleepContext(ctx, r.pollInterval); err != nil {
 					r.logger.Error("等待验证状态时发生错误: %v", err)
 					return nil, fmt.Errorf("等待验证状态失败: %w", err)
 				}
 				continue
 			}
-			r.logger.Error("验证失败: %s", v)
-			return nil, fmt.Errorf("captcha failed: %s", v)
 		case map[string]any:
 			challenge, _ := v["challenge"].(string)
 			gt, _ := v["gt"].(string)
@@ -228,37 +237,6 @@ func (r *remoteValidator) Validate(ctx context.Context) (*ValidatorResult, error
 	return r.pollValidationStatus(ctx, uuid)
 }
 
-// func getValidationUUID(ctx context.Context, client *resty.Client, headers map[string]string, logger Logger) (string, error) {
-// 	logger.Debug("开始获取验证UUID")
-// 	resp, err := client.R().
-// 		SetContext(ctx).
-// 		SetHeaders(headers).
-// 		Get("https://pcrd.tencentbot.top/geetest_renew")
-// 	if err != nil {
-// 		logger.Error("请求验证UUID时发生错误: %v", err)
-// 		return "", fmt.Errorf("网络请求验证UUID失败: %w", err)
-// 	}
-
-// 	if resp.IsError() {
-// 		logger.Error("获取验证UUID请求失败，状态码: %d", resp.StatusCode())
-// 		return "", fmt.Errorf("验证UUID请求返回错误状态码: %d", resp.StatusCode())
-// 	}
-
-// 	var result map[string]interface{}
-// 	if err := json.Unmarshal(resp.Body(), &result); err != nil {
-// 		logger.Error("解析验证UUID响应失败: %v", err)
-// 		return "", fmt.Errorf("解析验证UUID响应JSON失败: %w", err)
-// 	}
-
-// 	uuid, ok := result["uuid"].(string)
-// 	if !ok {
-// 		logger.Error("响应中不包含有效的UUID")
-// 		return "", fmt.Errorf("响应中不包含有效的UUID字段或格式错误")
-// 	}
-
-// 	return uuid, nil
-// }
-
 func sleepContext(ctx context.Context, d time.Duration) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -272,86 +250,3 @@ func sleepContext(ctx context.Context, d time.Duration) error {
 		return nil
 	}
 }
-
-// func pollValidationStatus(ctx context.Context, client *resty.Client, headers map[string]string, uuid string, logger Logger) (map[string]interface{}, error) {
-// 	maxAttempts := 5
-// 	checkEndpoint := fmt.Sprintf("https://pcrd.tencentbot.top/check/%s", uuid)
-// 	logger.Debug("开始轮询验证状态，最大尝试次数: %d", maxAttempts)
-
-// 	for attempt := 1; attempt <= maxAttempts; attempt++ {
-// 		if err := ctx.Err(); err != nil {
-// 			return nil, err
-// 		}
-// 		logger.Debug("验证状态检查 #%d/%d", attempt, maxAttempts)
-// 		resp, err := client.R().
-// 			SetContext(ctx).
-// 			SetHeaders(headers).
-// 			Get(checkEndpoint)
-// 		if err != nil {
-// 			logger.Error("检查验证状态时发生错误: %v", err)
-// 			return nil, err
-// 		}
-
-// 		if resp.IsError() {
-// 			logger.Error("验证状态检查请求失败，状态码: %d", resp.StatusCode())
-// 			return nil, fmt.Errorf("check request failed with status: %d", resp.StatusCode())
-// 		}
-
-// 		var result map[string]interface{}
-// 		if err := json.Unmarshal(resp.Body(), &result); err != nil {
-// 			logger.Error("解析验证状态响应失败: %v", err)
-// 			return nil, err
-// 		}
-
-// 		logger.Debug("验证检查结果 #%d: %v", attempt, result)
-
-// 		}
-
-// 		info, exists := result["info"]
-// 		if !exists {
-// 			logger.Error("验证失败: 响应中缺少 info 字段")
-// 			return nil, errors.New("captcha failed: missing info field")
-// 		}
-
-// 		switch v := info.(type) {
-// 		case string:
-// 			switch v {
-// 			case "fail", "url invalid":
-// 				logger.Error("验证失败: %s", v)
-// 				return nil, errors.New("captcha failed: " + v)
-// 			case "in running":
-// 				logger.Info("验证正在进行中，继续等待...")
-// 				if err := sleepContext(ctx, 8*time.Second); err != nil {
-// 					return nil, err
-// 				}
-// 				continue
-// 			default:
-// 				logger.Warn("未知的验证状态: %s", v)
-// 				continue
-// 			}
-
-// 		case map[string]interface{}:
-// 			if _, hasValidate := v["validate"]; hasValidate {
-// 				requiredFields := []string{"challenge", "gt", "gt_user_id", "validate"}
-// 				var missingFields []string
-
-// 				for _, field := range requiredFields {
-// 					if _, exists := v[field]; !exists {
-// 						missingFields = append(missingFields, field)
-// 					}
-// 				}
-
-// 				if len(missingFields) > 0 {
-// 					logger.Error("验证响应缺少必要字段: %v", missingFields)
-// 					return nil, fmt.Errorf("validation response missing required fields: %v", missingFields)
-// 				}
-
-// 				logger.Info("验证成功完成")
-// 				return v, nil
-// 			}
-// 		}
-// 	}
-
-// 	logger.Error("验证失败: 达到最大尝试次数 (%d)", maxAttempts)
-// 	return nil, errors.New("captcha failed: max attempts reached")
-// }

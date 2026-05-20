@@ -44,29 +44,6 @@ var startCaptchaAPI = endpoint[startCaptchaReq, startCaptchaResp]{
 	Path:   captchaAPIPath,
 }
 
-// func newCaptchaParams(captParams captchaParams) captchaParams {
-// 	if captParams.CaptchaType == "" {
-// 		captParams.CaptchaType = config.DefaultCaptchaType
-// 	}
-// 	return captParams
-// }
-
-// func newStartCaptchaReq(conf *config.ClientConf, hosts *config.HostConfig) request {
-// 	req := startCaptchaReq{
-// 		baseReqParams: newBaseRequest(conf),
-// 		Version:       config.DefaultCaptchaVersion,
-// 	}
-// 	return &req
-// }
-
-// func (rq startCaptchaReq) Method() string {
-// 	return http.MethodPost
-// }
-
-// func (rq startCaptchaReq) URL(hosts *config.HostConfig) (*url.URL, error) {
-// 	return modelURL(hosts, config.HostTypeLoginHttps, captchaAPIPath)
-// }
-
 func (c *Client) handleCaptcha(ctx context.Context) (*captchaParams, error) {
 	resp, err := execAPI(ctx, c, startCaptchaAPI, startCaptchaReq{
 		baseReqParams: c.baseReqParams,
@@ -97,14 +74,3 @@ func (c *Client) handleCaptcha(ctx context.Context) (*captchaParams, error) {
 		CToken:      ret.GtUserId,
 	}, nil
 }
-
-// func (c *Client) startCaptcha(ctx context.Context) (*startCaptchaResp, error) {
-// 	captchaReq := newStartCaptchaReq(c.config, c.hosts)
-
-// 	var result startCaptchaResp
-// 	if _, err := c.execReq(ctx, captchaReq, &result); err != nil {
-// 		return nil, fmt.Errorf("获取验证码请求错误: %w", err)
-// 	}
-
-// 	return &result, nil
-// }
