@@ -56,12 +56,3 @@ func newBaseReqParams(reqConf reqConf) baseReqParams {
 		OriginalDomain:    reqConf.OriginalDomain,
 	}
 }
-
-// func modelURL(hosts *config.HostConfig, hostType config.HostType, path string) (*url.URL, error) {
-// 	host := hosts.GetHost(hostType)
-// 	u, err := url.Parse(host + path)
-// 	if err != nil {
-// 		return nil, err
-// 	}
-// 	return u, nil
-// }
