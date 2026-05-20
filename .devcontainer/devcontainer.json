@@ -7,7 +7,7 @@
 	// 1. 启用并配置 Go 特性：强制要求安装 golangci-lint
 	"features": {
 		"ghcr.io/devcontainers/features/go:1": {
-			"version": "latest",
+			"version": "1.26",
 			"installGolangCI_Lint": true
 		}
 	},
