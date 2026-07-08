@@ -20,18 +20,19 @@ import (
 type clientConfig struct {
 	BaseParams config.BaseReqParams // 全局公共参数
 	Gateway    transport.Gateway    // 可选的物理底座网关
-	// Timeout 默认网关与默认验证码 HTTP 客户端的单次请求超时。仅在使用内建默认实现时生效；
-	// 若通过 WithClientGateway / WithClientCaptchaHTTPClient 注入了自定义实现，则各自的超时由
+	// Timeout 默认网关与内置默认验证码求解器的单次请求超时。仅在使用内建默认实现时生效；
+	// 若通过 WithClientGateway / WithClientValidator 注入了自定义实现，则各自的超时由
 	// 该实现自行管理，此字段对其不生效。
 	Timeout time.Duration
 	RetryTimes int
 	// Transport 共享的底层 *http.Transport（统一 proxy/TLS/连接池）。注入后，默认网关
-	// 与默认验证码 HTTP 客户端都会复用它——集成方只需配一次 transport 即可全链路共享。
-	// 若显式传入 WithClientGateway / WithClientCaptchaHTTPClient，则各自以显式值为准。
+	// 与内置默认验证码求解器都会复用它——集成方只需配一次 transport 即可全链路共享。
+	// 若显式传入 WithClientGateway / WithClientValidator，则各自以显式值为准。
 	Transport *http.Transport
-	// CaptchaHTTPClient 验证码求解走的独立 HTTP 客户端（打向 geetest 求解服务，
-	// 不经过 bili 登录业务管道）。为 nil 时使用带全局超时的标准库客户端。
-	CaptchaHTTPClient gtrv.HTTPClient
+	// Validator 验证码求解器（打向 geetest 求解服务，不经 bili 登录业务管道）。为 nil 时
+	// 用带全局超时的内置 gtrv 远程求解器（开箱即用）。有特殊需求（代理/自定义求解服务/
+	// 降级链/测试打桩）时，自行构造符合 gtrv.Validator 的实现传入即可。
+	Validator gtrv.Validator
 }
 
 func WithClientGateway(gw transport.Gateway) Option[clientConfig] {
@@ -48,10 +49,13 @@ func WithClientTransport(rt *http.Transport) Option[clientConfig] {
 	})
 }
 
-// WithClientCaptchaHTTPClient 注入验证码求解专用的 HTTP 客户端（如需代理或用于测试打桩）。
-func WithClientCaptchaHTTPClient(hc gtrv.HTTPClient) Option[clientConfig] {
+// WithClientValidator 注入验证码求解器（gtrv.Validator）。不设时用内置 gtrv 远程求解器
+// （开箱即用）。集成方若在别处也需要同一求解能力（如游戏服风控），构造【一个】
+// gtrv.Validator 注入此处即可两端复用；有代理/自定义求解服务/降级链/测试打桩等特殊
+// 需求时，也自行构造符合 gtrv.Validator 的实现传入。
+func WithClientValidator(v gtrv.Validator) Option[clientConfig] {
 	return optionFunc[clientConfig](func(c *clientConfig) {
-		c.CaptchaHTTPClient = hc
+		c.Validator = v
 	})
 }
 
@@ -135,17 +139,18 @@ func NewClient(ctx context.Context, appKey string, opts ...Option[clientConfig])
 	}
 
 	// 组装验证码 Failsafe 降级链。
-	// 验证码打向独立的 geetest 求解服务，必须用独立 HTTP 客户端，绝不能复用业务管道
+	// 验证码打向独立的 geetest 求解服务，绝不能复用业务管道
 	// （否则会被 commonParams/stamp/sign 污染并用错 appKey 签名）。
-	captchaHTTP := conf.CaptchaHTTPClient
-	if captchaHTTP == nil {
+	gtrvVal := conf.Validator
+	if gtrvVal == nil {
+		// 未注入：用带全局超时（+可选共享 transport）的内置 gtrv 远程求解器，开箱即用。
 		hc := &http.Client{Timeout: conf.Timeout}
 		if conf.Transport != nil {
 			hc.Transport = conf.Transport // 与业务网关共享同一底层 transport
 		}
-		captchaHTTP = hc
+		gtrvVal = gtrv.NewRemoteValidator(hc)
 	}
-	remoteSolver := validate.NewRemoteValidator(captchaHTTP)
+	remoteSolver := validate.NewRemoteValidator(gtrvVal)
 	failsafeValidator := validate.NewFailsafeChain(remoteSolver)
 
 	// 装配 Layer 2 业务大脑，完成“闭包指针绑定”与“凭证分流”
