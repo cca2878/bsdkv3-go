@@ -42,6 +42,11 @@ var (
 	// ErrAllHostsFailed 高可用重试耗尽——所有 host 都失败。属于 ErrTransport。
 	ErrAllHostsFailed = fmt.Errorf("%w: 所有 host 均失败", ErrTransport)
 
+	// ErrUnexpectedStatus 服务端返回非 2xx HTTP 状态码。属于 ErrTransport。
+	// 注意：bili 登录 API 的业务失败走 HTTP 200 + code 字段，因此非 2xx 一律视为
+	// 基础设施/协议层问题，而非业务错误。
+	ErrUnexpectedStatus = fmt.Errorf("%w: 非 2xx HTTP 状态码", ErrTransport)
+
 	// ErrTooManyCaptcha 触发过多验证码挑战，登录被兜底防线中断。属于 ErrLogin。
 	ErrTooManyCaptcha = fmt.Errorf("%w: 触发过多验证码挑战", ErrLogin)
 

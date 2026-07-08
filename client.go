@@ -20,7 +20,10 @@ import (
 type clientConfig struct {
 	BaseParams config.BaseReqParams // 全局公共参数
 	Gateway    transport.Gateway    // 可选的物理底座网关
-	Timeout    time.Duration        // 可选的全局超时设置(仅不使用默认网关时生效)
+	// Timeout 默认网关与默认验证码 HTTP 客户端的单次请求超时。仅在使用内建默认实现时生效；
+	// 若通过 WithClientGateway / WithClientCaptchaHTTPClient 注入了自定义实现，则各自的超时由
+	// 该实现自行管理，此字段对其不生效。
+	Timeout time.Duration
 	RetryTimes int
 	// Transport 共享的底层 *http.Transport（统一 proxy/TLS/连接池）。注入后，默认网关
 	// 与默认验证码 HTTP 客户端都会复用它——集成方只需配一次 transport 即可全链路共享。

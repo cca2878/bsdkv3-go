@@ -15,6 +15,8 @@ var (
 	ErrTransport = apierr.ErrTransport
 	// ErrAllHostsFailed 高可用重试耗尽，所有 host 均失败。
 	ErrAllHostsFailed = apierr.ErrAllHostsFailed
+	// ErrUnexpectedStatus 服务端返回非 2xx HTTP 状态码。
+	ErrUnexpectedStatus = apierr.ErrUnexpectedStatus
 	// ErrDecodeResponse 服务端响应反序列化失败。
 	ErrDecodeResponse = apierr.ErrDecodeResponse
 	// ErrCaptcha 人机验证（验证码）流程失败。

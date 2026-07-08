@@ -44,6 +44,15 @@ func execAPI[Req request, Resp any](ctx context.Context, pipeDo interceptor.Invo
 	if err != nil {
 		return nil, err
 	}
+	if resp == nil {
+		return nil, fmt.Errorf("%w: 管道返回空响应", apierr.ErrTransport)
+	}
+	// 非 2xx 一律视为基础设施/协议层失败，不再按业务响应解析。
+	// （bili 登录 API 的业务失败走 HTTP 200 + code 字段；≥500 已在 RetryInterceptor
+	// 内换 host 重试，此处主要拦截 4xx 以及重试耗尽后回落的响应。）
+	if resp.StatusCode/100 != 2 {
+		return nil, fmt.Errorf("%w: %d", apierr.ErrUnexpectedStatus, resp.StatusCode)
+	}
 
 	respBody := new(Resp)
 	err = json.Unmarshal(resp.Body, respBody)
