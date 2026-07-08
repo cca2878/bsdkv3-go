@@ -2,106 +2,164 @@ package bsdkv3
 
 import (
 	"context"
-	"crypto/rsa"
-	"fmt"
+	"net/http"
+	"sync/atomic"
+	"time"
 
-	"github.com/go-playground/form/v4"
-	"resty.dev/v3"
+	"github.com/cca2878/bsdkv3-go/config"
+	"github.com/cca2878/bsdkv3-go/internal/base"
+	"github.com/cca2878/bsdkv3-go/internal/gateway"
+	"github.com/cca2878/bsdkv3-go/internal/interceptor"
+	"github.com/cca2878/bsdkv3-go/internal/service"
+	"github.com/cca2878/bsdkv3-go/internal/validate"
+	"github.com/cca2878/bsdkv3-go/transport"
+	"github.com/cca2878/gtrv-go"
 )
 
-type optionsBuilder struct {
-	logger     Logger
-	clientConf clientConf
-	reqConf    reqConf
-	validator  Validator
+// clientConfig 外部用户传入的显式初始化配置
+type clientConfig struct {
+	BaseParams config.BaseReqParams // 全局公共参数
+	Gateway    transport.Gateway    // 可选的物理底座网关
+	// Timeout 默认网关与默认验证码 HTTP 客户端的单次请求超时。仅在使用内建默认实现时生效；
+	// 若通过 WithClientGateway / WithClientCaptchaHTTPClient 注入了自定义实现，则各自的超时由
+	// 该实现自行管理，此字段对其不生效。
+	Timeout time.Duration
+	RetryTimes int
+	// Transport 共享的底层 *http.Transport（统一 proxy/TLS/连接池）。注入后，默认网关
+	// 与默认验证码 HTTP 客户端都会复用它——集成方只需配一次 transport 即可全链路共享。
+	// 若显式传入 WithClientGateway / WithClientCaptchaHTTPClient，则各自以显式值为准。
+	Transport *http.Transport
+	// CaptchaHTTPClient 验证码求解走的独立 HTTP 客户端（打向 geetest 求解服务，
+	// 不经过 bili 登录业务管道）。为 nil 时使用带全局超时的标准库客户端。
+	CaptchaHTTPClient gtrv.HTTPClient
 }
 
-// Client 封装 HTTP 客户端和 API 调用。
+func WithClientGateway(gw transport.Gateway) Option[clientConfig] {
+	return optionFunc[clientConfig](func(c *clientConfig) {
+		c.Gateway = gw
+	})
+}
+
+// WithClientTransport 注入共享的底层 *http.Transport，默认网关与默认验证码客户端都会复用它
+// （与 go-autopcr 游戏 API / 资源下载统一 proxy/TLS/连接池）。
+func WithClientTransport(rt *http.Transport) Option[clientConfig] {
+	return optionFunc[clientConfig](func(c *clientConfig) {
+		c.Transport = rt
+	})
+}
+
+// WithClientCaptchaHTTPClient 注入验证码求解专用的 HTTP 客户端（如需代理或用于测试打桩）。
+func WithClientCaptchaHTTPClient(hc gtrv.HTTPClient) Option[clientConfig] {
+	return optionFunc[clientConfig](func(c *clientConfig) {
+		c.CaptchaHTTPClient = hc
+	})
+}
+
+func WithClientBaseParams(params config.BaseReqParams) Option[clientConfig] {
+	return optionFunc[clientConfig](func(c *clientConfig) {
+		c.BaseParams = params
+	})
+}
+
+func WithClientRetryTimes(times int) Option[clientConfig] {
+	return optionFunc[clientConfig](func(c *clientConfig) {
+		c.RetryTimes = times
+	})
+}
+
+// Client SDK 的唯一对外门面
 type Client struct {
-	// 基础设施
-	clientConf clientConf
-	hostMgr    *hostMgr
-	logger     Logger
-
-	// 业务基础
-	httpClient  *resty.Client
-	formEncoder *form.Encoder
-
-	// 业务配置
-	appKey        string
-	publicKey     rsa.PublicKey
-	baseReqParams baseReqParams
-
-	pwdHash string
-
-	validator Validator
+	// 【内部基建】：动态可变的管道原子指针，对外隐藏
+	pipeline atomic.Pointer[interceptor.Pipeline]
+	// 【内部配置】
+	appKey string
+	config clientConfig
+	// 【业务门面】：外部开发者唯一能点出来的业务入口
+	Auth *service.Service
 }
 
-func WithClientLogger(logger Logger) option[optionsBuilder] {
-	return optionFunc[optionsBuilder](func(b *optionsBuilder) {
-		b.logger = logger
-	})
-}
-func WithClientConf(conf clientConf) option[optionsBuilder] {
-	return optionFunc[optionsBuilder](func(b *optionsBuilder) {
-		b.clientConf = conf
-	})
-}
-func WithClientReqConf(conf reqConf) option[optionsBuilder] {
-	return optionFunc[optionsBuilder](func(b *optionsBuilder) {
-		b.reqConf = conf
-	})
-}
-
-// WithValidator 设置验证码验证器。
-func WithValidator(validator Validator) option[optionsBuilder] {
-	return optionFunc[optionsBuilder](func(b *optionsBuilder) {
-		b.validator = validator
-	})
-}
-
-// NewClient 创建一个新的 Client 实例。
-func NewClient(ctx context.Context, appKey string, options ...option[optionsBuilder]) (*Client, error) {
-
-	builder := &optionsBuilder{
-		logger:     discardLogger,
-		clientConf: NewClientConf(),
-		reqConf:    NewReqConf(),
+// NewClient 整个 SDK 的总装车间（采用 Fail-Fast 隐式预加载模式）
+func NewClient(ctx context.Context, appKey string, opts ...Option[clientConfig]) (*Client, error) {
+	// 预设配置
+	conf := clientConfig{
+		Gateway:    nil,
+		BaseParams: config.NewDefaultBaseReqParams(),
+		Timeout:    20 * time.Second,
+		RetryTimes: 3,
 	}
-	for _, opt := range options {
-		opt.apply(builder)
+	for _, opt := range opts {
+		opt.apply(&conf)
 	}
 
-	if builder.logger == nil {
-		builder.logger = discardLogger
+	// 制造物理底座网关
+	// 可选配置项通过 Option 模式注入
+	if conf.Gateway == nil {
+		gwOpts := []gateway.Option[gateway.HTTPGatewayOptions]{
+			gateway.WithHTTPGatewayTimeout(int(conf.Timeout.Seconds())),
+		}
+		if conf.Transport != nil {
+			gwOpts = append(gwOpts, gateway.WithHTTPGatewayTransport(conf.Transport))
+		}
+		conf.Gateway = gateway.NewHTTPGateway(gwOpts...)
+	}
+	// 组装“第一级火箭”（用于拉取初始配置的临时轻量管道）
+	initPipe := interceptor.NewPipeline(conf.Gateway).
+		Use(interceptor.NewCommonParamsInterceptor(conf.BaseParams)).
+		Use(interceptor.NewStampInterceptor()).
+		Use(interceptor.NewSignInterceptor(appKey)) // 签名
+
+	// 发射第一级火箭（调用解耦的纯函数拉取核心配置）
+	hosts, err := service.FetchBootstrapHosts(ctx, initPipe.Do)
+	if err != nil {
+		return nil, err // 尽早失败，不暴露半成品对象
 	}
 
+	// 拿到配置，开始组装“第二级火箭”（终极业务管道）
+	fullPipe := interceptor.NewPipeline(conf.Gateway).
+		Use(interceptor.NewRetryInterceptor(conf.RetryTimes, base.NewHostManager(hosts))).
+		Use(interceptor.NewCommonParamsInterceptor(conf.BaseParams)).
+		Use(interceptor.NewStampInterceptor()).
+		Use(interceptor.NewSignInterceptor(appKey))
+
+	// 实例化主体
 	client := &Client{
-		clientConf: builder.clientConf,
-		hostMgr:    newHostManager([]string{defaultLoginHttpsHost}),
-		logger:     builder.logger,
-		httpClient: resty.New().
-			SetHeaders(map[string]string{
-				"Content-Type": "application/x-www-form-urlencoded",
-				"User-Agent":   "Mozilla/5.0 BSGameSDK",
-				"cversion":     "1",
-			}).
-			SetTimeout(builder.clientConf.Timeout),
-		formEncoder:   form.NewEncoder(),
-		appKey:        appKey,
-		baseReqParams: newBaseReqParams(builder.reqConf),
+		config: conf,   // 保存配置
+		appKey: appKey, // 保存 AppKey
 	}
-	remoteFallback := newRemoteValidator(
-		resty.NewWithClient(client.httpClient.Client()),
-		withValidatorLogger(client.logger),
-	)
-	client.validator = remoteFallback
-	if builder.validator != nil {
-		client.validator = newValidatorChain(builder.validator, remoteFallback)
+	client.pipeline.Store(fullPipe) // 将终极管道装入原子指针
+
+	// 拉取登录密钥（RSA 公钥 + hash 盐）。走 fullPipe，直接享受高可用 host 路由与重试。
+	cipher, err := service.FetchCipher(ctx, client.do)
+	if err != nil {
+		return nil, err // 尽早失败，不暴露半成品对象
 	}
 
-	if err := client.bootstrap(ctx); err != nil {
-		return nil, fmt.Errorf("配置失败: %w", err)
+	// 组装验证码 Failsafe 降级链。
+	// 验证码打向独立的 geetest 求解服务，必须用独立 HTTP 客户端，绝不能复用业务管道
+	// （否则会被 commonParams/stamp/sign 污染并用错 appKey 签名）。
+	captchaHTTP := conf.CaptchaHTTPClient
+	if captchaHTTP == nil {
+		hc := &http.Client{Timeout: conf.Timeout}
+		if conf.Transport != nil {
+			hc.Transport = conf.Transport // 与业务网关共享同一底层 transport
+		}
+		captchaHTTP = hc
 	}
+	remoteSolver := validate.NewRemoteValidator(captchaHTTP)
+	failsafeValidator := validate.NewFailsafeChain(remoteSolver)
+
+	// 装配 Layer 2 业务大脑，完成“闭包指针绑定”与“凭证分流”
+	client.Auth = service.NewService(
+		client.do, // 隐式捕获 client 指针，奠定热更新基础
+		failsafeValidator,
+		*cipher, // 密码加密凭证（RSA 公钥 + hash 盐）注入
+	)
+
 	return client, nil
+}
+
+// Do 门面代理方法（实现 transport.Invoker 签名）
+// 彻底将 atomic.Load 的复杂性拦截在门面内部，让 Layer 2 彻底解耦
+func (c *Client) do(ctx context.Context, req *transport.Request) (*transport.Response, error) {
+	return c.pipeline.Load().Do(ctx, req)
 }
