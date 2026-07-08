@@ -4,11 +4,11 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
 
+	"github.com/cca2878/bsdkv3-go/internal/apierr"
 	"github.com/cca2878/bsdkv3-go/internal/base"
 )
 
@@ -63,7 +63,7 @@ var loginAPI = endpoint[loginReq, loginResp]{
 func (s *Service) hashPwd(pwd string) (string, error) {
 	data, err := encryptPKCS1v15(s.cipher.PublicKey, []byte(s.cipher.HashSalt+pwd))
 	if err != nil {
-		return "", fmt.Errorf("加密密码失败: %w", err)
+		return "", fmt.Errorf("加密密码失败: %w", err) // 底层已归属 apierr.ErrCipher
 	}
 	return base64.StdEncoding.EncodeToString(data), nil
 }
@@ -130,10 +130,10 @@ func (s *Service) Login(ctx context.Context, user UserInfo) (*SdkAccount, error)
 
 		// 状态 B：登录失败（密码错误、账号封禁等非验证码错误）
 		if respBody.Code.Valid && respBody.Code.Value.String() != "0" {
-			return nil, fmt.Errorf("登录失败 (code: %s): %s", respBody.Code.Value.String(), respBody.Message.Value)
+			return nil, &apierr.LoginError{Code: respBody.Code.Value.String(), Message: respBody.Message.Value}
 		}
 		if !respBody.AccessKey.Valid || respBody.AccessKey.Value == "" {
-			return nil, fmt.Errorf("登录失败 (code: %s): %s", respBody.Code.Value.String(), respBody.Message.Value)
+			return nil, fmt.Errorf("%w (code %s): %s", apierr.ErrMissingAccessKey, respBody.Code.Value.String(), respBody.Message.Value)
 		}
 		uid := ""
 		if respBody.Uid.Valid {
@@ -148,5 +148,5 @@ func (s *Service) Login(ctx context.Context, user UserInfo) (*SdkAccount, error)
 	}
 
 	// 循环结束依然没成功，说明触发了兜底防线
-	return nil, errors.New("触发过多验证码挑战，登录流程异常中断")
+	return nil, apierr.ErrTooManyCaptcha
 }

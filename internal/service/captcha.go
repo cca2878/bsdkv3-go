@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/cca2878/bsdkv3-go/internal/apierr"
 	"github.com/cca2878/bsdkv3-go/internal/base"
 	"github.com/cca2878/bsdkv3-go/internal/validate"
 )
@@ -41,7 +42,7 @@ type startCaptchaResp struct {
 
 func (rq startCaptchaReq) validate() error {
 	if rq.Version == "" {
-		return fmt.Errorf("version is required")
+		return fmt.Errorf("%w: version 不能为空", apierr.ErrInvalidRequest)
 	}
 	return nil
 }
@@ -56,7 +57,7 @@ func (s *Service) handleCaptcha(ctx context.Context) (*captchaResult, error) {
 		Version: defaultCaptchaVersion,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("发送验证码请求失败: %w", err)
+		return nil, fmt.Errorf("%w: 发送验证码请求失败: %w", apierr.ErrCaptcha, err)
 	}
 
 	ret, err := s.validator.Validate(ctx, &validate.ValidatorChallenge{
@@ -64,7 +65,7 @@ func (s *Service) handleCaptcha(ctx context.Context) (*captchaResult, error) {
 		Challenge: respBody.Challenge.Value,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("验证码校验失败: %w", err)
+		return nil, fmt.Errorf("%w: 验证码校验失败: %w", apierr.ErrCaptcha, err)
 	}
 
 	return &captchaResult{

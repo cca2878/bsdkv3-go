@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/cca2878/bsdkv3-go/internal/apierr"
 	"github.com/cca2878/bsdkv3-go/internal/base"
 	"github.com/cca2878/bsdkv3-go/internal/interceptor"
 )
@@ -48,7 +49,7 @@ type getCipherV3Req struct {
 
 func (rq getCipherV3Req) validate() error {
 	if rq.CipherType == "" {
-		return fmt.Errorf("cipher_type不能为空")
+		return fmt.Errorf("%w: cipher_type 不能为空", apierr.ErrInvalidRequest)
 	}
 	return nil
 }
@@ -72,11 +73,11 @@ type CipherResult struct {
 func FetchBootstrapHosts(ctx context.Context, invoker interceptor.Invoker) ([]string, error) {
 	confResp, err := execAPI(ctx, invoker, extConfAPI, extConfReq{})
 	if err != nil {
-		return nil, fmt.Errorf("获取外部配置失败: %w", err)
+		return nil, fmt.Errorf("%w: 获取外部配置失败: %w", apierr.ErrBootstrap, err)
 	}
 
 	if !confResp.ConfigLoginHttps.Valid || confResp.ConfigLoginHttps.Value == "" {
-		return nil, fmt.Errorf("获取的登录Hosts配置为空")
+		return nil, fmt.Errorf("%w: 登录 host 配置为空", apierr.ErrBootstrap)
 	}
 
 	loginHosts := confResp.ConfigLoginHttps.Value
@@ -88,7 +89,7 @@ func FetchBootstrapHosts(ctx context.Context, invoker interceptor.Invoker) ([]st
 		}
 	}
 	if len(hosts) == 0 {
-		return nil, fmt.Errorf("解析的登录Hosts列表为空")
+		return nil, fmt.Errorf("%w: 解析后的登录 host 列表为空", apierr.ErrBootstrap)
 	}
 
 	return hosts, nil
@@ -102,15 +103,15 @@ func FetchCipher(ctx context.Context, invoker interceptor.Invoker) (*CipherResul
 		CipherType: cipherType,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("获取登录Secrets失败: %w", err)
+		return nil, fmt.Errorf("%w: 获取登录密钥失败: %w", apierr.ErrBootstrap, err)
 	}
 
 	if !cipherResp.Hash.Valid || !cipherResp.CipherKey.Valid {
-		return nil, fmt.Errorf("获取的登录Secrets响应缺少必要字段")
+		return nil, fmt.Errorf("%w: 登录密钥响应缺少必要字段", apierr.ErrBootstrap)
 	}
 	publicKey, err := parsePubkeyFromPEM(cipherResp.CipherKey.Value)
 	if err != nil {
-		return nil, fmt.Errorf("解析公钥失败: %w", err)
+		return nil, fmt.Errorf("%w: 解析公钥失败: %w", apierr.ErrBootstrap, err)
 	}
 
 	return &CipherResult{

@@ -3,6 +3,8 @@ package validate
 import (
 	"context"
 	"fmt"
+
+	"github.com/cca2878/bsdkv3-go/internal/apierr"
 )
 
 // FailsafeChain 依然实现 Validator 接口
@@ -41,5 +43,5 @@ func (c *FailsafeChain) Validate(ctx context.Context, challenge *ValidatorChalle
 	}
 
 	// 所有兜底方案全部阵亡
-	return nil, fmt.Errorf("所有人机验证方案均失败, 最后错误: %w", lastErr)
+	return nil, fmt.Errorf("%w: 所有人机验证方案均失败, 最后错误: %w", apierr.ErrCaptcha, lastErr)
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 
+	"github.com/cca2878/bsdkv3-go/internal/apierr"
 	"github.com/cca2878/bsdkv3-go/internal/base"
 	"github.com/cca2878/bsdkv3-go/transport"
 )
@@ -46,7 +47,7 @@ func NewRetryInterceptor(maxRetries int, hostMgr *base.HostMgr) Interceptor {
 						// 若无传输错误（纯 5xx），也要合成一个 error：否则上层会把 5xx 错误页
 						// 当成成功响应去反序列化，掩盖真正的服务端故障。
 						if err == nil && resp != nil {
-							return resp, fmt.Errorf("所有 host 均失败，末次 HTTP 状态码 %d", resp.StatusCode)
+							return resp, fmt.Errorf("%w: 末次 HTTP 状态码 %d", apierr.ErrAllHostsFailed, resp.StatusCode)
 						}
 						return resp, err
 					}

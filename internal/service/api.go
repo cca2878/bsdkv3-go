@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 
+	"github.com/cca2878/bsdkv3-go/internal/apierr"
 	"github.com/cca2878/bsdkv3-go/internal/interceptor"
 	"github.com/cca2878/bsdkv3-go/transport"
 	"github.com/go-playground/form/v4"
@@ -26,11 +27,11 @@ func execAPI[Req request, Resp any](ctx context.Context, pipeDo interceptor.Invo
 	}
 	urlPath, err := url.Parse(endpoint.Path)
 	if err != nil {
-		return nil, fmt.Errorf("解析URL失败: %w", err)
+		return nil, fmt.Errorf("%w: 解析 URL 失败: %w", apierr.ErrInvalidRequest, err)
 	}
 	formValues, err := form.NewEncoder().Encode(reqBody)
 	if err != nil {
-		return nil, fmt.Errorf("编码表单参数失败: %w", err)
+		return nil, fmt.Errorf("%w: 编码表单参数失败: %w", apierr.ErrInvalidRequest, err)
 	}
 
 	req := &transport.Request{
@@ -47,7 +48,7 @@ func execAPI[Req request, Resp any](ctx context.Context, pipeDo interceptor.Invo
 	respBody := new(Resp)
 	err = json.Unmarshal(resp.Body, respBody)
 	if err != nil {
-		return nil, fmt.Errorf("解析响应失败: %w", err)
+		return nil, fmt.Errorf("%w: %w", apierr.ErrDecodeResponse, err)
 	}
 	return respBody, nil
 }
