@@ -3,46 +3,33 @@ package main
 import (
 	"context"
 	"fmt"
-	"os"
 	"time"
 
-	"github.com/cca2878/bsdkv3-go"
+	bsdkv3 "github.com/cca2878/bsdkv3-go"
 )
 
-func testLoginR() {
-	// 创建日志记录器，使用导出的 LogLevelDebug 级别
-	logger := bsdkv3.NewStdLogger(os.Stdout, bsdkv3.LogLevelDebug)
-
-	user := bsdkv3.UserInfo{
-		Username: "example_user",
-		Password: "example_password",
-	}
+func main() {
+	fmt.Println("============== bsdkv3 login example ==============")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	client, err := bsdkv3.NewClient(ctx, bsdkv3.AppkeyPcr,
-		bsdkv3.WithClientLogger(logger),
-	)
+	// NewClient 会隐式完成 bootstrap（拉取登录 host 列表 + RSA 登录密钥），fail-fast。
+	client, err := bsdkv3.NewClient(ctx, bsdkv3.AppkeyPcr)
 	if err != nil {
-		logger.Error("创建客户端失败！")
-		logger.Error("错误信息：%s", err.Error())
+		fmt.Println("创建客户端失败:", err)
 		return
 	}
 
-	// 执行登录并自动处理验证码
-	ret, err := client.Login(ctx, user)
+	// 执行登录并自动处理验证码（geetest 求解走独立 HTTP 客户端）。
+	acc, err := client.Auth.Login(ctx, bsdkv3.UserInfo{
+		Username: "example_user",
+		Password: "example_password",
+	})
 	if err != nil {
-		logger.Error("登录失败！")
-		logger.Error("错误信息：%s", err.Error())
+		fmt.Println("登录失败:", err)
 		return
 	}
 
-	logger.Info("登录成功！")
-	logger.Info("Uid: %v, AccessKey: %s", ret.Uid, ret.AccessKey)
-}
-
-func main() {
-	fmt.Println("============== test bsdkv3r ==============")
-	testLoginR()
+	fmt.Printf("登录成功 Uid=%s AccessKey=%s\n", acc.Uid, acc.AccessKey)
 }

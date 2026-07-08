@@ -1,11 +1,10 @@
-package bsdkv3
+package service
 
 import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
-	"errors"
 	"fmt"
 )
 
@@ -14,7 +13,7 @@ func parsePubkeyFromPEM(keyPEMString string) (*rsa.PublicKey, error) {
 
 	block, _ := pem.Decode(keyPEMBytes)
 	if block == nil {
-		return nil, errors.New("failed to decode PEM block")
+		return nil, fmt.Errorf("failed to decode PEM block")
 	}
 
 	pub, err := x509.ParsePKIXPublicKey(block.Bytes)
@@ -26,7 +25,7 @@ func parsePubkeyFromPEM(keyPEMString string) (*rsa.PublicKey, error) {
 		return publicKey, nil
 	}
 
-	return nil, errors.New("parsed key is not an RSA public key")
+	return nil, fmt.Errorf("parsed key is not an RSA public key")
 }
 
 func encryptPKCS1v15(pubkey rsa.PublicKey, plainBytes []byte) ([]byte, error) {

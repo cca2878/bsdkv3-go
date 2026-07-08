@@ -1,9 +1,7 @@
-package bsdkv3
+package config
 
-// baseReqParams 各 API 请求的公共表单字段。
-type baseReqParams struct {
-	// config: conf,
-
+// BaseReqParams 各 API 请求的公共表单字段。
+type BaseReqParams struct {
 	CurBuvid          string `form:"cur_buvid"`
 	OldBuvid          string `form:"old_buvid"`
 	UdId              string `form:"udid"`
@@ -30,29 +28,29 @@ type baseReqParams struct {
 	Sign              string `form:"sign"`
 }
 
-func newBaseReqParams(reqConf reqConf) baseReqParams {
-	return baseReqParams{
-		CurBuvid:          reqConf.CurBuvid,
-		OldBuvid:          reqConf.OldBuvid,
-		UdId:              reqConf.UdId,
-		BdId:              reqConf.BdId,
-		SdkType:           reqConf.SdkType,
-		VersionCode:       reqConf.VersionCode,
-		MerchantId:        reqConf.MerchantId,
-		ServerId:          reqConf.ServerId,
-		Version:           reqConf.Version,
-		DomainSwitchCount: reqConf.DomainSwitchCount,
-		ApkSign:           reqConf.ApkSign,
-		PlatformType:      reqConf.PlatformType,
-		AppVer:            reqConf.AppVer,
-		SdkLogType:        reqConf.SdkLogType,
-		CurrentEnv:        reqConf.CurrentEnv,
-		SdkVer:            reqConf.SdkVer,
-		AppId:             reqConf.AppId,
-		Platform:          reqConf.Platform,
-		ChannelId:         reqConf.ChannelId,
-		GameId:            reqConf.GameId,
-		Domain:            reqConf.Domain,
-		OriginalDomain:    reqConf.OriginalDomain,
+func NewDefaultBaseReqParams() BaseReqParams {
+	return BaseReqParams{
+		CurBuvid:          "CR_NMSL",
+		OldBuvid:          "CR_NMSL",
+		UdId:              "CR_NMSL",
+		BdId:              "cr-nmsl",
+		SdkType:           "1",
+		VersionCode:       "276",
+		MerchantId:        "1",
+		ServerId:          "1592",
+		Version:           "3",
+		DomainSwitchCount: "0",
+		ApkSign:           "crnmsl",
+		PlatformType:      "3",
+		AppVer:            "8.1.0",
+		SdkLogType:        "1",
+		CurrentEnv:        "0",
+		SdkVer:            "6.6.2",
+		AppId:             "1370",
+		Platform:          "3",
+		ChannelId:         "1",
+		GameId:            "1370",
+		Domain:            "line1-sdk-center-login-sh.biligame.net",
+		OriginalDomain:    "line1-sdk-center-login-sh.biligame.net",
 	}
 }
