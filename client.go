@@ -23,7 +23,7 @@ type clientConfig struct {
 	// Timeout 默认网关与内置默认验证码求解器的单次请求超时。仅在使用内建默认实现时生效；
 	// 若通过 WithClientGateway / WithClientValidator 注入了自定义实现，则各自的超时由
 	// 该实现自行管理，此字段对其不生效。
-	Timeout time.Duration
+	Timeout    time.Duration
 	RetryTimes int
 	// Transport 共享的底层 *http.Transport（统一 proxy/TLS/连接池）。注入后，默认网关
 	// 与内置默认验证码求解器都会复用它——集成方只需配一次 transport 即可全链路共享。
