@@ -6,12 +6,11 @@ import (
 	"github.com/cca2878/gtrv-go"
 )
 
-// HTTPClient 是远程验证器所需的最小 HTTP 能力（标准库 *http.Client 即满足）。
+// RemoteValidator 把 gtrv.Validator 适配为本包的 Validator 契约（补上 SDK 内部所需的
+// challenge 形参；当前 gtrv 求解服务自管 geetest 会话、无需该形参）。
 //
-// 注意：验证码请求打向独立的 geetest 求解服务（非 bili 登录 API），因此绝不能复用
-// 主 SDK 的业务管道（否则会被 commonParams/stamp/sign 污染并用错 appKey 签名）。
-type HTTPClient = gtrv.HTTPClient
-
+// 注意：验证码请求打向独立的 geetest 求解服务（非 bili 登录 API），因此其底层 HTTP
+// 绝不能复用主 SDK 的业务管道（否则会被 commonParams/stamp/sign 污染并用错 appKey 签名）。
 type RemoteValidator struct {
 	validator gtrv.Validator
 }
@@ -30,7 +29,7 @@ func (rv *RemoteValidator) Validate(ctx context.Context, challenge *ValidatorCha
 	}, nil
 }
 
-// NewRemoteValidator 用给定的 HTTP 客户端构造远程验证器。
-func NewRemoteValidator(httpClient HTTPClient) Validator {
-	return &RemoteValidator{validator: gtrv.NewRemoteValidator(httpClient)}
+// NewRemoteValidator 用给定的 gtrv.Validator 构造适配器。
+func NewRemoteValidator(v gtrv.Validator) Validator {
+	return &RemoteValidator{validator: v}
 }
